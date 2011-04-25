@@ -2,9 +2,9 @@ OBJECTS = $(patsubst %.c,%.o,$(wildcard *.c))
 
 LD = gcc
 CC = gcc
-LIBS = `sdl-config --libs` -lrt
-LDFLAGS = -m32 -L/usr/lib32
-CFLAGS = -std=c1x -O3 -Wall -Wextra -pedantic -g2 -m32 `sdl-config --cflags`
+MLIBS = `sdl-config --libs` -lrt $(LIBS)
+MLDFLAGS = -m32 -L/usr/lib32 $(LDFLAGS) $(PROF)
+MCFLAGS = -std=c1x -O3 -Wall -Wextra -pedantic -g2 -m32 `sdl-config --cflags` $(CFLAGS) $(PROF)
 RM = rm -rf
 
 .PHONY: all clean
@@ -12,10 +12,13 @@ RM = rm -rf
 all: xgbcdyna
 
 xgbcdyna: $(OBJECTS)
-	$(LD) $(LDFLAGS) $^ -o $@ $(LIBS)
+	$(LD) $(MLDFLAGS) $^ -o $@ $(MLIBS)
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(MCFLAGS) -c $< -o $@
+
+execute.o: execute.c $(wildcard dynarec/*.c)
+	$(CC) $(MCFLAGS) -c $< -o $@
 
 clean:
 	$(RM) $(OBJECTS) xgbcdyna

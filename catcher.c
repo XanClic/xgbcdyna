@@ -19,46 +19,175 @@
 
 #include "xgbc.h"
 
-#define PLEN (sizeof(uintptr_t) * 2)
 
-static void unhandled_segv(siginfo_t *info, ucontext_t *ac, const char *reason) __attribute__((noreturn));
-static void unhandled_segv(siginfo_t *info, ucontext_t *ac, const char *reason)
+static void unhandled_segv(ucontext_t *ac, const char *reason) __attribute__((noreturn));
+static void unhandled_segv(ucontext_t *ac, const char *reason)
 {
     fprintf(stderr, "*** Unbehandelter Speicherzugriffsfehler. ***\n");
     fprintf(stderr, "%s\n", reason);
 
-    uintptr_t ip = ac->uc_mcontext.gregs[REG_EIP];
-
-    fprintf(stderr, "IP=0x%0*X FA=0x%0*X\n", PLEN, ip, PLEN, (uintptr_t)info->si_addr);
+    fprintf(stderr, "EIP=0x%08X CR2=0x%08X\n", ac->uc_mcontext.gregs[REG_EIP], (unsigned)ac->uc_mcontext.cr2);
+    fprintf(stderr, "EAX=0x%08X EBX=0x%08X ECX=0x%08X EDX=0x%08X\n", ac->uc_mcontext.gregs[REG_EAX], ac->uc_mcontext.gregs[REG_EBX], ac->uc_mcontext.gregs[REG_ECX], ac->uc_mcontext.gregs[REG_EDX]);
+    fprintf(stderr, "ESI=0x%08X EDI=0x%08X EBP=0x%08X ESP=0x%08X\n", ac->uc_mcontext.gregs[REG_ESI], ac->uc_mcontext.gregs[REG_EDI], ac->uc_mcontext.gregs[REG_EBP], ac->uc_mcontext.gregs[REG_ESP]);
 
     exit(1);
 }
 
-static bool x86_disassemble(uint8_t *i, bool *rw, size_t *width, unsigned *reg, unsigned *reg_ofs, size_t *instr_len)
+// Prüft, ob der Zugriff auf die Adresse überhaupt faulten darf
+static void unsafe_mem_test(ucontext_t *ac, uintptr_t addr)
 {
-    if ((i[0] == 0x88) && (i[1] == 0x02)) // mov [edx],al
+    if (unlikely(addr < MEM_BASE) || unlikely(addr > MEM_BASE + 0xFFFF))
+        unhandled_segv(ac, "Programminterner Fehler (unbeabsichtigt aka Bug).");
+
+    if (unlikely((addr >= 0x8000) && (addr < 0xA000)) || unlikely((addr >= 0xC000) && (addr < 0xF000)))
+        unhandled_segv(ac, "Zugriff sollte eigentlich funktionieren (Bug)...");
+}
+
+// Liest aus anscheinend ungemapptem Speicher
+static uint8_t unsafe_mem_read8(uint16_t addr)
+{
+    if (likely(addr >= 0xF000)) // HMEM (WRAM/OAM/IO/HRAM)
+        return hmem_read8(addr - 0xF000);
+    else if (likely(addr < 0x8000)) // ROM
+        return *(uint8_t *)(MEM_BASE + addr);
+    else // externer RAM
+        return eram_read8(addr - 0xA000);
+}
+
+// Schreibt in anscheinend ungemappten oder RO-Speicher
+static void unsafe_mem_write8(uint16_t addr, uint8_t val)
+{
+    if (likely(addr >= 0xF000)) // HMEM (WRAM/OAM/IO/HRAM)
+        hmem_write8(addr - 0xF000, val);
+    else if (addr < 0x8000) // ROM
+        rom_write8(addr, val);
+    else // externer RAM
+        eram_write8(addr - 0xA000, val);
+}
+
+static void unsafe_mem_write16(uint16_t addr, uint16_t val)
+{
+    if (likely(addr >= 0xF000))
     {
-        *rw = 1;
-        *width = sizeof(uint8_t);
-        *reg = REG_EAX;
-        *reg_ofs = 0;
-        *instr_len = 2;
+        hmem_write8(addr - 0xF000, val);
+        hmem_write8(addr - 0xEFFF, val >> 8);
     }
-    else if (i[0] == 0xA2) // mov byte [],al
+    else if (addr < 0x8000)
     {
-        *rw = 1;
-        *width = sizeof(uint8_t);
-        *reg = REG_EAX;
-        *reg_ofs = 0;
-        *instr_len = 2;
+        rom_write8(addr + 0, val);
+        rom_write8(addr + 1, val >> 8);
     }
     else
     {
-        fprintf(stderr, "Unbekannter x86-Befehl: %02X %02X %02X %02X %02X %02X\n", i[0], i[1], i[2], i[3], i[4], i[5]);
-        return false;
+        eram_write8(addr - 0xA000, val);
+        eram_write8(addr - 0x9FFF, val >> 8);
     }
+}
 
-    return true;
+static size_t x86_execute(ucontext_t *ac)
+{
+    uint8_t *i = (uint8_t *)ac->uc_mcontext.gregs[REG_EIP];
+
+    if ((i[0] == 0x88) && (i[1] == 0x02)) // mov [edx],al
+    {
+        unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, ac->uc_mcontext.gregs[REG_EAX] & 0xFF);
+        return 2;
+    }
+    else if ((i[0] == 0x8A) && (i[1] == 0x02)) // mov al,[edx]
+    {
+        ac->uc_mcontext.gregs[REG_EAX] &= ~0xFF;
+        ac->uc_mcontext.gregs[REG_EAX] |= unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF);
+        return 2;
+    }
+    else if (i[0] == 0xA2) // mov byte [nnnn],al
+    {
+        unsafe_mem_write8(*(uint16_t *)(i + 1), ac->uc_mcontext.gregs[REG_EAX] & 0xFF);
+        return 5;
+    }
+    else if ((i[0] == 0xFE) && (i[1] == 0x02)) // inc byte [edx]
+    {
+        uint8_t result = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF) + 1;
+        unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, result);
+        ac->uc_mcontext.gregs[REG_EFL] &= ~0x08D4; // OF, SF, ZF, AF und PF löschen
+        // ZF und AF entsprechend setzen, SF/OF/PF brauche ich nicht
+        ac->uc_mcontext.gregs[REG_EFL] |= (!result << 6) /* ZF */ | (!(result & 15) << 4) /* AF */;
+        return 2;
+    }
+    else if ((i[0] == 0xC6) && (i[1] == 0x02)) // mov byte [edx],n
+    {
+        unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, i[2]);
+        return 3;
+    }
+    else if ((i[0] == 0x8A) && (i[1] == 0x01)) // mov al,[ecx]
+    {
+        ac->uc_mcontext.gregs[REG_EAX] &= ~0xFF;
+        ac->uc_mcontext.gregs[REG_EAX] |= unsafe_mem_read8(ac->uc_mcontext.gregs[REG_ECX] & 0xFFFF);
+        return 2;
+    }
+    else if ((i[0] == 0x88) && (i[1] == 0x01)) // mov [ecx],al
+    {
+        unsafe_mem_write8(ac->uc_mcontext.gregs[REG_ECX] & 0xFFFF, ac->uc_mcontext.gregs[REG_EAX] & 0xFF);
+        return 2;
+    }
+    else if ((i[0] == 0xF6) && (i[1] == 0x02)) // test byte [edx],n
+    {
+        uint8_t result = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF) & i[2];
+        ac->uc_mcontext.gregs[REG_EFL] &= ~0x08C5; // OF, SF, ZF, PF und CF löschen
+        // ZF entsprechend setzen, SF/PF brauche ich nicht
+        ac->uc_mcontext.gregs[REG_EFL] |= (!result << 6);
+        return 3;
+    }
+    else if (i[0] == 0xA0) // mov al,[nnnn]
+    {
+        ac->uc_mcontext.gregs[REG_EAX] &= ~0xFF;
+        ac->uc_mcontext.gregs[REG_EAX] |= unsafe_mem_read8(*(uint16_t *)(i + 1));
+        return 5;
+    }
+    else if ((i[0] == 0x66) && (i[1] == 0x89) && (i[2] == 0x2D)) // mov [nnnn],bp
+    {
+        unsafe_mem_write16(*(uint16_t *)(i + 3), ac->uc_mcontext.gregs[REG_EBP] & 0xFFFF);
+        return 7;
+    }
+    else if ((i[0] == 0x3A) && (i[1] == 0x02)) // cmp al,[edx]
+    {
+        uint8_t v1 = ac->uc_mcontext.gregs[REG_EAX] & 0xFF;
+        uint8_t v2 = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF);
+        unsigned result = (unsigned)v1 - (unsigned)v2;
+        ac->uc_mcontext.gregs[REG_EFL] &= ~0x08D5; // OF, SF, ZF, AF, PF und CF löschen
+        // ZF, CF und AF setzen, den Rest brauche ich nicht
+        ac->uc_mcontext.gregs[REG_EFL] |= (!result << 6) /* ZF */ | ((result & 0x100) >> 8) /* CF */ | (((v1 & 0xF) < (v2 & 0xF)) << 4) /* AF */;
+        return 2;
+    }
+    else if ((i[0] == 0x2A) && (i[1] == 0x02)) // sub al,[edx]
+    {
+        uint8_t v1 = ac->uc_mcontext.gregs[REG_EAX] & 0xFF;
+        uint8_t v2 = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF);
+        unsigned result = (unsigned)v1 - (unsigned)v2;
+        ac->uc_mcontext.gregs[REG_EAX] &= ~0xFF;
+        ac->uc_mcontext.gregs[REG_EAX] |= result & 0xFF;
+        ac->uc_mcontext.gregs[REG_EFL] &= ~0x08D5; // OF, SF, ZF, AF, PF und CF löschen
+        // ZF, CF und AF setzen, den Rest brauche ich nicht
+        ac->uc_mcontext.gregs[REG_EFL] |= (!result << 6) /* ZF */ | ((result & 0x100) >> 8) /* CF */ | (((v1 & 0xF) < (v2 & 0xF)) << 4) /* AF */;
+        return 2;
+    }
+    else if ((i[0] == 0x80) && (i[1] == 0x22)) // and byte [edx],n
+    {
+        uint8_t result = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF) & i[2];
+        unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, result);
+        ac->uc_mcontext.gregs[REG_EFL] &= ~0x08C5; // OF, SF, ZF, PF und CF löschen
+        // ZF entsprechend setzen, SF/PF brauche ich nicht
+        ac->uc_mcontext.gregs[REG_EFL] |= (!result << 6);
+        return 3;
+    }
+    else
+    {
+        fprintf(stderr, "0x%08X: Unbekannter x86-Befehl: %02X %02X %02X %02X %02X %02X\n", (uintptr_t)i, i[0], i[1], i[2], i[3], i[4], i[5]);
+        FILE *d = fopen("/tmp/xgbcdyna-coredump", "wb");
+        fwrite((void *)((uintptr_t)i & ~0xFFF), 4096, 1, d);
+        fclose(d);
+        fprintf(stderr, "Page mit dem Befehl wurde nach /tmp/xgbcdyna-coredump gedumpt.\n");
+        unhandled_segv(ac, "Unbekannter Befehl.");
+    }
 }
 
 static void segv_handler(int signo, siginfo_t *info, void *context)
@@ -68,62 +197,9 @@ static void segv_handler(int signo, siginfo_t *info, void *context)
 
     ucontext_t *ac = context;
 
-    uintptr_t addr = (uintptr_t)info->si_addr;
-    uint8_t *instr = (uint8_t *)ac->uc_mcontext.gregs[REG_EIP];
+    unsafe_mem_test(ac, (uintptr_t)info->si_addr);
 
-    if ((addr < MEM_BASE) || (addr > MEM_BASE + 0xFFFF))
-        unhandled_segv(info, ac, "Programminterner Fehler (unbeabsichtigt aka Bug).");
-
-    bool rw;
-    size_t wdt, ilen;
-    unsigned reg, reg_shift;
-
-    if (!x86_disassemble(instr, &rw, &wdt, &reg, &reg_shift, &ilen))
-        unhandled_segv(info, ac, "Unbekannte Instruktion.");
-
-    addr -= MEM_BASE;
-
-    if (addr >= 0xF000)
-    {
-        switch (wdt)
-        {
-            case sizeof(uint8_t):
-                if (rw)
-                    hmem_write8(addr, ac->uc_mcontext.gregs[reg] >> reg_shift);
-                else
-                {
-                    ac->uc_mcontext.gregs[reg] &= ~(0xFF << reg_shift);
-                    ac->uc_mcontext.gregs[reg] |= hmem_read8(addr) << reg_shift;
-                }
-                break;
-            case sizeof(uint16_t):
-                if (rw)
-                {
-                    hmem_write8(addr + 0, ac->uc_mcontext.gregs[reg] >> (reg_shift + 0));
-                    hmem_write8(addr + 1, ac->uc_mcontext.gregs[reg] >> (reg_shift + 8));
-                }
-                else
-                {
-                    ac->uc_mcontext.gregs[reg] &= ~(0xFFFF << reg_shift);
-                    ac->uc_mcontext.gregs[reg] |= hmem_read8(addr + 0) << (reg_shift + 0);
-                    ac->uc_mcontext.gregs[reg] |= hmem_read8(addr + 1) << (reg_shift + 8);
-                }
-                break;
-            default:
-                unhandled_segv(info, ac, "Ungültige Zugriffsgröße.");
-        }
-    }
-    else if (addr < 0x8000)
-    {
-        if (!rw)
-            unhandled_segv(info, ac, "RO-Zugriff auf ROM sollte eigentlich funktionieren (Bug)...");
-
-        unhandled_segv(info, ac, "Schreibzugriff auf ROM.");
-    }
-    else
-        unhandled_segv(info, ac, "Zugriff sollte eigentlich funktionieren (Bug)...");
-
-    ac->uc_mcontext.gregs[REG_EIP] += ilen;
+    ac->uc_mcontext.gregs[REG_EIP] += x86_execute(ac);
 }
 
 void install_segv_handler(void)

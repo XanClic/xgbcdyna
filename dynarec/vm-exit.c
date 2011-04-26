@@ -1,5 +1,7 @@
-static void exit_vm(uint8_t *opbuf, size_t *i, size_t ei, uint16_t exit_ip, uint8_t exit_cycles)
+static void exit_vm(uint8_t *opbuf, size_t *i, uint16_t exit_ip, uint8_t exit_cycles)
 {
+    // 0x15 Bytes.
+
     // mov word [vm_ip],exit_ip
     vmapp2(opbuf, *i, 0xC766);
     vmapp1(opbuf, *i, 0x05);
@@ -9,11 +11,13 @@ static void exit_vm(uint8_t *opbuf, size_t *i, size_t ei, uint16_t exit_ip, uint
     vmapp4(opbuf, *i, (uintptr_t)&cycles_gone);
     // jmp dword ei
     vmapp2(opbuf, *i, exit_cycles | 0xE900);
-    vmapp4(opbuf, *i, (uint32_t)(ei - (*i + 4)));
+    vmapp4(opbuf, *i, (uint32_t)(CODE_EXITI - (*i + 4)));
 }
 
-static void exit_vm_by_ret(uint8_t *opbuf, size_t *i, size_t ei, uint8_t exit_cycles)
+static void exit_vm_by_ret(uint8_t *opbuf, size_t *i, uint8_t exit_cycles)
 {
+    // 0x1E Bytes.
+
     // lahf; push eax; mov ax,[ebp]
     vmapp4(opbuf, *i, 0x8B66509F);
     // add bp,2
@@ -26,5 +30,5 @@ static void exit_vm_by_ret(uint8_t *opbuf, size_t *i, size_t ei, uint8_t exit_cy
     vmapp4(opbuf, *i, (uintptr_t)&cycles_gone);
     // jmp dword ei
     vmapp2(opbuf, *i, exit_cycles | 0xE900);
-    vmapp4(opbuf, *i, (uint32_t)(ei - (*i + 4)));
+    vmapp4(opbuf, *i, (uint32_t)(CODE_EXITI - (*i + 4)));
 }

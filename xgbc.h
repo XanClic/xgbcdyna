@@ -1,12 +1,15 @@
 #ifndef XGBC_H
 #define XGBC_H
 
+#include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #define MEM_BASE 0x40000000UL
 
-#define MEM8(o) (((uint8_t *)(uintptr_t)MEM_BASE)[o])
-#define MEM16(o) (*(uint16_t *)((uintptr_t)MEM_BASE + o))
+// ought to be enough
+#define CODE_BUFSZ 0x1000
+#define CODE_EXITI (CODE_BUFSZ - 0x0100)
 
 #define likely(x)     __builtin_expect((x), 1)
 #define unlikely(x)   __builtin_expect((x), 0)
@@ -103,17 +106,86 @@ struct io
 #define KEY_DIR (1 << 4)
 #define KEY_OTH (1 << 5)
 
+#ifdef VK_A
+#undef VK_A
+#endif
+#ifdef VK_B
+#undef VK_B
+#endif
+#ifdef VK_SELECT
+#undef VK_SELECT
+#endif
+#ifdef VK_START
+#undef VK_START
+#endif
+#ifdef VK_RIGHT
+#undef VK_RIGHT
+#endif
+#ifdef VK_LEFT
+#undef VK_LEFT
+#endif
+#ifdef VK_UP
+#undef VK_UP
+#endif
+#ifdef VK_DOWN
+#undef VK_DOWN
+#endif
+
+#define VK_A      KEY_A
+#define VK_B      KEY_B
+#define VK_SELECT KEY_SELECT
+#define VK_START  KEY_START
+#define VK_RIGHT  (KEY_RIGHT << 4)
+#define VK_LEFT   (KEY_LEFT  << 4)
+#define VK_UP     (KEY_UP    << 4)
+#define VK_DOWN   (KEY_DOWN  << 4)
+
 void begin_execution(void);
+bool check_cartridge(FILE *fp);
 void init_memory(void);
 void install_segv_handler(void);
+void init_video(unsigned multiplier);
+
+void change_banked_rom(unsigned new_bank);
 
 uint8_t hmem_read8(unsigned off);
 void hmem_write8(unsigned off, uint8_t val);
+void rom_write8(unsigned off, uint8_t val);
 uint8_t io_read(uint8_t reg);
 void io_write(uint8_t reg, uint8_t val);
+uint8_t eram_read8(unsigned off);
+void eram_write8(unsigned off, uint8_t val);
+void update_cpu(unsigned cycles);
 void inc_timer(unsigned cycles);
+void handle_input_events(void);
+void draw_line(unsigned line);
 
 void mem_select_wram_bank(unsigned bank);
 void mem_select_vram_bank(unsigned bank);
+
+static inline uint8_t MEM8(uint16_t addr)
+{
+    if (likely(addr < 0xF000))
+        return ((uint8_t *)(uintptr_t)MEM_BASE)[addr];
+    return hmem_read8(addr & 0x0FFF);
+}
+
+static inline uint16_t MEM16(uint16_t addr)
+{
+    if (likely(addr < 0xF000))
+        return *(uint16_t *)((uintptr_t)MEM_BASE + addr);
+    return hmem_read8(addr & 0x0FFF) | ((unsigned)hmem_read8((addr & 0x0FFF) + 1) << 8);
+}
+
+static inline void mem_write16(uint16_t addr, uint16_t val)
+{
+    if (likely(addr < 0xF000))
+        *(uint16_t *)((uintptr_t)MEM_BASE + addr) = val;
+    else
+    {
+        hmem_write8(addr - 0xF000, val);
+        hmem_write8(addr - 0xEFFF, val >> 8);
+    }
+}
 
 #endif

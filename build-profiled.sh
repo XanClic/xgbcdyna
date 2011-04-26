@@ -12,6 +12,10 @@ echo "Building profiling version..."
 PROF=--coverage make || exit 1
 ./xgbcdyna $1
 make clean
+echo "Building optimized profiling version..."
+PROF="--coverage -fprofile-use" make || exit 1
+./xgbcdyna $1
+make clean
 echo "Building optimized version..."
 PROF=-fprofile-use make || exit 1
 echo "Removing profiling information..."

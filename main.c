@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -36,12 +37,32 @@ int main(int argc, char *argv[])
 
     if (ram_size)
     {
-        FILE *ramfp = fopen("/tmp/xgbcdyna.sav", "rb+");
+        char *ramfn;
+        if (argc >= 3)
+            ramfn = argv[2];
+        else
+        {
+            ramfn = malloc(strlen(argv[1]) + 5);
+            strcpy(ramfn, argv[1]);
+            char *sep = strrchr(ramfn, '.');
+            if ((uintptr_t)sep > (uintptr_t)strrchr(ramfn, '/'))
+                *sep = 0;
+            strcat(ramfn, ".sav");
+        }
+
+        FILE *ramfp = fopen(ramfn, "rb+");
         if (ramfp == NULL)
         {
-            ramfp = fopen("/tmp/xgbcdyna.sav", "wb+");
+            ramfp = fopen(ramfn, "wb+");
+            if (ramfp == NULL)
+            {
+                fprintf(stderr, "Konnte RAM-Image \"%s\" nicht öffnen: %s\n", ramfn, strerror(errno));
+                return 1;
+            }
+
             ftruncate(fileno(ramfp), ram_size * 0x2000);
         }
+
         ramfd = fileno(ramfp);
     }
 

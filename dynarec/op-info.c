@@ -56,7 +56,7 @@ const unsigned break_on[256] = {
 #ifndef UNSAVE_RAM_MAPPING
     1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // F
 #else
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // F
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // F
 #endif
 };
 
@@ -80,7 +80,7 @@ const unsigned compilability[256] = {
 #ifndef UNSAVE_RAM_MAPPING
     0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1  // F
 #else
-    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1  // F
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1  // F
 #endif
 };
 

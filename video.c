@@ -373,8 +373,6 @@ void draw_line(unsigned line)
 
     if (rline == HEIGHT - 1)
         SDL_UpdateRect(screen, 0, 0, 0, 0);
-
-    //os_draw_line(sx, sy, line);
 }
 
 void increase_frameskip(void)

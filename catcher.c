@@ -20,6 +20,10 @@
 #include "xgbc.h"
 
 
+#ifdef STATS
+unsigned segfaults = 0;
+#endif
+
 static void unhandled_segv(ucontext_t *ac, const char *reason) __attribute__((noreturn));
 static void unhandled_segv(ucontext_t *ac, const char *reason)
 {
@@ -194,6 +198,10 @@ static void segv_handler(int signo, siginfo_t *info, void *context)
 {
     if (signo != SIGSEGV)
         return;
+
+#ifdef STATS
+    segfaults++;
+#endif
 
     ucontext_t *ac = context;
 

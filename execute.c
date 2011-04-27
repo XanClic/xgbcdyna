@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -8,19 +9,7 @@
 
 #include "xgbc.h"
 
-#define UNSAVE_FLAG_OPTIMIZATIONS
-#define UNSAVE_RAM_CACHING
-
-
-
-// ough to be enough
-#define CODE_BUFSZ 0x1000
-#define CODE_EXITI (CODE_BUFSZ - 0x0100)
-
-#define CACHES_SIZE 0x400
-
 // #define DUMP_BLOCKS
-#define STATS
 
 
 
@@ -32,6 +21,7 @@ extern bool interrupt_issued;
 
 #ifdef STATS
 unsigned cache_hits = 0, cache_misses = 0, cache_frees = 0, uncached = 0;
+extern unsigned segfaults;
 #endif
 
 extern const uint8_t flag_table[256], reverse_flag_table[256];
@@ -143,7 +133,7 @@ static void dynarec(exec_unit_t eu, uint16_t ip)
             cycle_counter += cycles0xCB[pop];
         }
 
-        if (unlikely(cycle_counter >= 128)) // Wahllos...
+        if (unlikely(cycle_counter >= MAX_CYCLES))
             break;
 
         if ((ip & 0xC000) != start_area)
@@ -374,7 +364,7 @@ static void dynarec(exec_unit_t eu, uint16_t ip)
             }
         }
 
-        if (unlikely(cycle_counter >= 128))
+        if (unlikely(dr_cycle_counter >= MAX_CYCLES))
         {
             exit_vm(drc, &dri, drip, dr_cycle_counter);
             break;
@@ -386,6 +376,9 @@ static void dynarec(exec_unit_t eu, uint16_t ip)
             break;
         }
     }
+
+    assert(cycle_counter == dr_cycle_counter);
+    assert(ip == drip);
 
 #ifdef DUMP_BLOCKS
     printf("block 0x%04X - 0x%04X dumped.\n", ipwas, ip);
@@ -492,6 +485,8 @@ static void print_cum_cycles(int status, void *arg)
     printf("%i (%g %%) durch den Cache, %i (%g %%) vorbei.\n", cached, (double)cached * 100. / (double)total, uncached, (double)uncached * 100. / (double)total);
     printf("%i (%g %%) Cache-Treffer, %i (%g %%) Cache-Verfehler.\n", cache_hits, (double)cache_hits * 100. / (double)cached, cache_misses, (double)cache_misses * 100. / (double)cached);
     printf("%i Blöcke gelöscht.\n\n", cache_frees);
+
+    printf("%i Speicherzugriffsfehler abgefangen.\n\n", segfaults);
 #endif
 
 

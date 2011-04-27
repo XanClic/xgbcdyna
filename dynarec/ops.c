@@ -355,9 +355,14 @@ def_drop_rst(0x28)
 def_drop_rst(0x30)
 def_drop_rst(0x38)
 
-drop(leave_vm_imm)
+drop(leave_vm_imm_op0)
 {
     exit_vm(drc, &dri, drip - 1, dr_cycle_counter);
+}
+
+drop(leave_vm_imm_op1)
+{
+    exit_vm(drc, &dri, drip++ - 1, dr_cycle_counter);
 }
 
 drop(ld__nn_a)
@@ -672,7 +677,7 @@ static void (*const dynarec_table[256])(void) = {
 #ifndef UNSAVE_FLAG_OPTIMIZATIONS
     dran(0x3F, ccf),
 #endif
-    dran(0x76, leave_vm_imm), // halt
+    dran(0x76, leave_vm_imm_op0), // halt
 #ifndef UNSAVE_FLAG_OPTIMIZATIONS
     dran(0xA0, and_a_b),
     dran(0xA1, and_a_c),
@@ -723,9 +728,9 @@ static void (*const dynarec_table[256])(void) = {
     dran(0xDA, jpc_nn),
     dran(0xDC, callc_nn),
     dran(0xDF, rst_0x18),
-    dran(0xE0, leave_vm_imm), // ld__ffn_a
+    dran(0xE0, leave_vm_imm_op1), // ld__ffn_a
     dran(0xE1, pop_hl),
-    dran(0xE2, leave_vm_imm), // ld__ffc_a
+    dran(0xE2, leave_vm_imm_op0), // ld__ffc_a
     dran(0xE5, push_hl),
 #ifndef UNSAVE_FLAG_OPTIMIZATIONS
     dran(0xE6, and_a_n),
@@ -737,9 +742,9 @@ static void (*const dynarec_table[256])(void) = {
     dran(0xEE, xor_a_n),
 #endif
     dran(0xEF, rst_0x28),
-    dran(0xF0, leave_vm_imm), // ld_a__ffn
+    dran(0xF0, leave_vm_imm_op1), // ld_a__ffn
     dran(0xF1, pop_af),
-    dran(0xF2, leave_vm_imm), // ld_a__ffc
+    dran(0xF2, leave_vm_imm_op0), // ld_a__ffc
     dran(0xF3, di),
     dran(0xF5, push_af),
 #ifndef UNSAVE_FLAG_OPTIMIZATIONS
@@ -790,7 +795,7 @@ static const size_t dynarec_const_length[256] = {
     [0x23] = 4 | DYNAREC_CNST,
     [0x24] = 2 | DYNAREC_CNST,
     [0x25] = 2 | DYNAREC_CNST,
-    [0x26] = 2 | DYNAREC_CNST,
+    [0x26] = 2 | DYNAREC_LOAD,
     [0x2B] = 4 | DYNAREC_CNST,
     [0x2C] = 2 | DYNAREC_CNST,
     [0x2D] = 2 | DYNAREC_CNST,

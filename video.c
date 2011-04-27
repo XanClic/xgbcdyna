@@ -8,37 +8,25 @@
 
 #include "xgbc.h"
 
-// #define DISPLAY_ALL
-
-int frameskip_skip = 0, frameskip_draw = 16;
-static int frameskip_draw_i = 0, frameskip_skip_i = 0, skip_this = 0;
-
-static SDL_Surface *screen;
+static SDL_Surface *screen, *vscreen;
 
 extern struct io io_state;
 extern bool has_cgb, lcd_on;
 
 extern uint8_t *full_vidram, *oam;
 
+// Background palette, object palette
 uint16_t bpalette[32], opalette[32];
+// Internal background palette, internal object palette
+uint32_t ibpalette[32], iopalette[32];
 uint8_t *btm[2], *bwtd[2], *wtm[2];
 
-uint32_t *vidmem;
+#define vpb ((uint32_t *)vscreen->pixels)
 
-#ifdef DISPLAY_ALL
-#define WIDTH 256
-#define HEIGHT 256
-#else
 #define WIDTH 160
 #define HEIGHT 144
-#endif
 
 extern unsigned keystates;
-
-static inline int pal2rgb(int pal)
-{
-    return ((pal & 0x1F) << 19) | (((pal >> 5) & 0x1F) << 11) | ((pal >> 10) << 3);
-}
 
 void init_video(unsigned mult)
 {
@@ -52,17 +40,32 @@ void init_video(unsigned mult)
 
     atexit(SDL_Quit);
 
-    screen = SDL_SetVideoMode(WIDTH, HEIGHT, 32, SDL_HWSURFACE);
+    screen = SDL_SetVideoMode(WIDTH, HEIGHT, 32, SDL_HWSURFACE | SDL_ASYNCBLIT);
     if (screen == NULL)
     {
         fprintf(stderr, "Konnte keine SDL-Ausgabe öffnen: %s\n", SDL_GetError());
         exit(1);
     }
 
+    SDL_PixelFormat vscr_format = {
+        .BitsPerPixel = 32,
+        .BytesPerPixel = 4,
+        .Rshift = 16,
+        .Gshift = 8,
+        .Bshift = 0,
+        .Rmask = 0xFF0000,
+        .Gmask = 0x00FF00,
+        .Bmask = 0x0000FF,
+    };
+    vscreen = SDL_ConvertSurface(screen, &vscr_format, SDL_HWSURFACE | SDL_ASYNCBLIT);
+    if (vscreen == NULL)
+    {
+        fprintf(stderr, "Konnte vscreen nicht erstellen: %s\n", SDL_GetError());
+        exit(1);
+    }
+
     SDL_WM_SetCaption("xgbcdyna", NULL);
 
-
-    vidmem = calloc(sizeof(uint32_t), 256 * 256);
 
     btm[0] = &full_vidram[0x1800];
     btm[1] = &full_vidram[0x3800];
@@ -75,80 +78,76 @@ void init_video(unsigned mult)
     {
         bpalette[i] = 0x011F;
         opalette[i] = 0x011F;
+        ibpalette[i] = 0xFF4000;
+        iopalette[i] = 0xFF4000;
     }
 }
 
 static void draw_bg_line(unsigned line, unsigned bit7val, unsigned window)
 {
-    int by = line & 0xF8, ry = line & 0x07;
-    int tile = by * 4;
+    unsigned ay = io_state.scy + line;
+    int by = ay & 0xF8, ry = ay & 0x07;
 
-    line *= 256;
+    line *= 160;
 
-    for (int bx = 0; bx < 256; bx += 8)
+    int cb1 = 0, cb2 = 0, cflags = 0, vbank = 0;
+    uint32_t *cpal = ibpalette;
+    uint8_t ax = io_state.scx;
+
+    for (int sx = 0; sx < 160; sx++, ax++)
     {
-        if (window && (io_state.wx <= bx))
-            break;
-
-        int flags;
-        if (has_cgb)
-            flags = btm[1][tile];
-        else
-            flags = 0;
-
-        if ((flags & (1 << 7)) != bit7val)
+        if (unlikely(!sx) || unlikely(!(ax & 7)))
         {
-            tile++;
-            continue;
-        }
+            if (window && (io_state.wx <= ax))
+                break;
 
-        uint8_t *tdat;
-        int vbank;
-        uint16_t *pal;
-        if (has_cgb)
-        {
-            vbank = !!(flags & (1 << 3));
-            pal = &bpalette[(flags & 7) * 4];
-        }
-        else
-        {
-            vbank = 0;
-            pal = bpalette;
-        }
+            int tile = (by << 2) + (ax >> 3);
 
-        if (bwtd[0] == &full_vidram[0x0000])
-            tdat = &bwtd[vbank][(unsigned)btm[0][tile] * 16];
-        else
-            tdat = &bwtd[vbank][(int)(int8_t)btm[0][tile] * 16];
+            if (has_cgb)
+                cflags = btm[1][tile];
 
-        int b1, b2;
+            if ((cflags & (1 << 7)) != bit7val)
+            {
+                ax = ((ax + 9) & ~7) - 1;
+                sx = ax - io_state.scx;
+                if (sx < 0)
+                    sx += 256;
+                continue;
+            }
 
-        if (flags & (1 << 6))
-        {
-            b1 = tdat[(7 - ry) * 2];
-            b2 = tdat[(7 - ry) * 2 + 1];
-        }
-        else
-        {
-            b1 = tdat[ry * 2];
-            b2 = tdat[ry * 2 + 1];
-        }
+            uint8_t *tdat;
+            if (has_cgb)
+            {
+                vbank = !!(cflags & (1 << 3));
+                cpal = &ibpalette[(cflags & 7) * 4];
+            }
 
-        for (int rx = 0; rx < 8; rx++)
-        {
-            int val, mask;
-
-            if (flags & (1 << 5))
-                mask = 1 << rx;
+            if (bwtd[0] == &full_vidram[0x0000])
+                tdat = &bwtd[vbank][btm[0][tile] * 16];
             else
-                mask = 1 << (7 - rx);
+                tdat = &bwtd[vbank][(int8_t)btm[0][tile] * 16];
 
-            val = !!(b1 & mask) + !!(b2 & mask) * 2;
-
-            vidmem[line + bx + rx] = pal2rgb(pal[val]);
+            if (cflags & (1 << 6))
+            {
+                cb1 = tdat[(7 - ry) * 2];
+                cb2 = tdat[(7 - ry) * 2 + 1];
+            }
+            else
+            {
+                cb1 = tdat[ry * 2];
+                cb2 = tdat[ry * 2 + 1];
+            }
         }
 
-        tile++;
+        int val, mask;
+
+        if (cflags & (1 << 5))
+            mask = 1 << (ax & 7);
+        else
+            mask = 1 << (7 - (ax & 7));
+
+        val = !!(cb1 & mask) + !!(cb2 & mask) * 2;
+        vpb[line + sx] = cpal[val] | (val << 24);
     }
 }
 
@@ -161,48 +160,24 @@ void draw_line(unsigned line)
         return;
     }
 
-    if (skip_this && (line < 143))
-        return;
-    else if (line == 143)
-    {
-        if (skip_this)
-        {
-            if (++frameskip_skip_i >= frameskip_skip)
-            {
-                frameskip_skip_i = 0;
-                skip_this = 0;
-                return;
-            }
-        }
-        else
-        {
-            if (++frameskip_draw_i >= frameskip_draw)
-            {
-                frameskip_draw_i = 0;
-                if (frameskip_skip)
-                    skip_this = 1;
-            }
-        }
-    }
-
     struct
     {
         uint8_t y, x;
         uint8_t num;
         uint8_t flags;
     } __attribute__((packed)) *soam = (void *)oam;
-    int sx = io_state.scx, sy = io_state.scy;
-    int abs_line = (line + sy) & 0xFF;
     int window_active = ((io_state.lcdc & (1 << 5)) && (io_state.wx >= 7) && (io_state.wx <= 166) && (io_state.wy <= line));
 
+    unsigned line_o = line * 160;
+
     if (!(io_state.lcdc & (1 << 0)))
-        memset(vidmem + abs_line * 256, 0, 256 * 4);
+        memset(vpb + line_o, 0, 160 * sizeof(uint32_t));
     else
-        draw_bg_line(abs_line, 0 << 7, window_active);
+        draw_bg_line(line, 0 << 7, window_active);
 
     if (window_active)
     {
-        int wx = io_state.wx + sx - 7, wy = io_state.wy;
+        int wx = io_state.wx - 7, wy = io_state.wy;
         int yoff = line - wy;
         int by = yoff & 0xF8, ry = yoff & 0x07;
         int tile = by * 4;
@@ -217,16 +192,16 @@ void draw_line(unsigned line)
 
             uint8_t *tdat;
             int vbank;
-            uint16_t *pal;
+            uint32_t *pal;
             if (has_cgb)
             {
                 vbank = !!(flags & (1 << 3));
-                pal = &bpalette[(flags & 7) * 4];
+                pal = &ibpalette[(flags & 7) * 4];
             }
             else
             {
                 vbank = 0;
-                pal = bpalette;
+                pal = ibpalette;
             }
 
             if (bwtd[0] == &full_vidram[0x0000])
@@ -257,7 +232,7 @@ void draw_line(unsigned line)
                         val += !!(tdat[(7 - ry) * 2 + 1] & (1 << rx)) << 1;
                 }
 
-                vidmem[abs_line * 256 + ((bx + rx + wx) & 0xFF)] = pal2rgb(pal[val]);
+                vpb[line_o + bx + rx + wx] = pal[val];
             }
 
             tile++;
@@ -273,11 +248,11 @@ void draw_line(unsigned line)
         {
             uint8_t *tdat;
             int bx = soam[sprite].x, by = soam[sprite].y, flags = soam[sprite].flags;
-            uint16_t *pal;
+            uint32_t *pal;
             if (has_cgb)
-                pal = &opalette[(flags & 7) * 4];
+                pal = &iopalette[(flags & 7) * 4];
             else
-                pal = &opalette[(flags & (1 << 4)) >> 2];
+                pal = &iopalette[(flags & (1 << 4)) >> 2];
 
             if (!has_cgb)
                 flags &= 0xF0;
@@ -314,9 +289,6 @@ void draw_line(unsigned line)
                     tdat = &full_vidram[0x2000 + (soam[sprite].num & 0xFE) * 16];
             }
 
-            bx += sx;
-            by += sy;
-
             for (int rx = 0; rx < 8; rx++)
             {
                 int val, bmask;
@@ -330,77 +302,24 @@ void draw_line(unsigned line)
                 val += !!(tdat[ry * 2 + 1] & bmask) << 1;
 
                 if (val && !(flags & (1 << 7)))
-                    vidmem[abs_line * 256 + ((bx + rx) & 0xFF)] = pal2rgb(pal[val]);
+                    vpb[line_o + bx + rx] = pal[val];
                 else if (val)
                 {
-                    if (!(vidmem[abs_line * 256 + ((bx + rx) & 0xFF)] & 0xFF000000))
-                        vidmem[abs_line * 256 + ((bx + rx) & 0xFF)] = pal2rgb(pal[val]);
+                    if (!(vpb[line_o + bx + rx] & 0xFF000000))
+                        vpb[line_o + bx + rx] = pal[val];
                 }
             }
         }
     }
 
     if ((io_state.lcdc & (1 << 0)) && has_cgb)
-        draw_bg_line(abs_line, 1 << 7, window_active);
+        draw_bg_line(line, 1 << 7, window_active);
 
     if (line == 143)
     {
         handle_input_events();
 
-        #ifdef DISPLAY_ALL
-        for (int rem = 144; rem < 256; rem++)
-            draw_line(rem);
-        #endif
-    }
-
-
-    //void os_draw_line(int offx, int offy, int line)
-    int py = ((line + sy) & 0xFF) << 8;
-    int rline = line;
-
-    line *= WIDTH;
-
-    SDL_LockSurface(screen);
-
-    for (int x = 0; x < WIDTH; x++)
-    {
-        int px = (x + sx) & 0xFF;
-        uint32_t col = vidmem[py + px];
-        ((uint32_t *)screen->pixels)[line + x] = SDL_MapRGB(screen->format, (col & 0xFF0000) >> 16, (col & 0xFF00) >> 8, col & 0xFF);
-    }
-
-    SDL_UnlockSurface(screen);
-
-    if (rline == HEIGHT - 1)
+        SDL_BlitSurface(vscreen, NULL, screen, NULL);
         SDL_UpdateRect(screen, 0, 0, 0, 0);
-}
-
-void increase_frameskip(void)
-{
-    if (!frameskip_skip)
-        frameskip_skip = 1;
-    else if (frameskip_draw > 1)
-        frameskip_draw /= 2;
-    else if (frameskip_skip < 5)
-        frameskip_skip++;
-    else
-    {
-        frameskip_skip = 0;
-        frameskip_draw = 16;
     }
-}
-
-void decrease_frameskip(void)
-{
-    if (!frameskip_skip)
-    {
-        frameskip_skip = 5;
-        frameskip_draw = 1;
-    }
-    else if (frameskip_skip > 1)
-        frameskip_skip--;
-    else if (frameskip_draw < 16)
-        frameskip_draw *= 2;
-    else
-        frameskip_skip = 0;
 }

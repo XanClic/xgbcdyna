@@ -14,10 +14,10 @@ all: xgbcdyna
 xgbcdyna: $(OBJECTS)
 	$(LD) $(MLDFLAGS) $^ -o $@ $(MLIBS)
 
-%.o: %.c
+%.o: %.c xgbc.h
 	$(CC) $(MCFLAGS) -c $< -o $@
 
-execute.o: execute.c $(wildcard dynarec/*.c)
+execute.o: execute.c $(wildcard dynarec/*.c) xgbc.h
 	$(CC) $(MCFLAGS) -c $< -o $@
 
 clean:

@@ -512,7 +512,7 @@ static void print_cum_cycles(int status, void *arg)
     printf("%g s nicht erfasst.\n\n", (double)(end - start) / 1000000. - time_sum);
 
     printf("%lli Zyklen (%g s, %g %%) im HALT, ", halt_cycles, (double)halt_cycles / tscres, (double)halt_cycles * 100. / cycsum);
-    printf("virtuelle CPU-Auslastung: %u von %u Zyklen (%g %%).\n\n", cumulative_cycles - vhalt_cycles, cumulative_cycles, (double)(cumulative_cycles - vhalt_cycles) / (double)cumulative_cycles);
+    printf("virtuelle CPU-Auslastung: %u von %u Zyklen (%g %%).\n\n", cumulative_cycles - vhalt_cycles, cumulative_cycles, (double)(cumulative_cycles - vhalt_cycles) * 100. / (double)cumulative_cycles);
 #endif
 
 
@@ -611,10 +611,16 @@ void begin_execution(void)
                     while (!interrupt_issued)
                     {
 #ifdef CYCLE_STATS
-                        vhalt_cycles++;
                         __asm__ __volatile__ ("rdtsc" : "=A"(v2));
 #endif
-                        update_cpu(1);
+#if HALT_CYCLES == -1
+                        skip_until_hblank();
+#else
+#ifdef CYCLE_STATS
+                        vhalt_cycles += HALT_CYCLES;
+#endif
+                        update_cpu(HALT_CYCLES);
+#endif
 #ifdef CYCLE_STATS
                         __asm__ __volatile__ ("rdtsc" : "=A"(v4));
                         update_cycles += v4 - v2;

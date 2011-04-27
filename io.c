@@ -23,7 +23,11 @@ extern uint8_t keystates;
 
 struct io io_state;
 
+#ifdef UNSAVE_RAM_MAPPING
+uint8_t ie;
+#else
 uint8_t ie = 0;
+#endif
 
 static bool timer_running = false, hdma_on = false;
 bool lcd_on = true;
@@ -41,7 +45,7 @@ void hdma_copy_16b(void)
     *(dst++) = *(src++);
     *(dst++) = *(src++);
 #else
-    if (likely(src < 0xF000))
+    if (likely((uint16_t)(uintptr_t)src < 0xF000))
     {
         *(dst++) = *(src++);
         *(dst++) = *(src++);

@@ -367,9 +367,9 @@ drop(leave_vm_imm_op1)
 
 drop(ld__nn_a)
 {
-    // mov byte [0x40000000+nn],al
+    // mov byte [MEM_BASE+nn],al
     drvmapp1(0xA2);
-    drvmapp4(0x40000000 + MEM16(drip));
+    drvmapp4(MEM_BASE + MEM16(drip));
     drip += 2;
 }
 
@@ -382,9 +382,9 @@ drop(pop_af)
     drvmapp4((uintptr_t)&reverse_flag_table);
     // mov al,[ebp+1]; add bp,2
     drvmapp4(0x6601458A);
-    // ...; or eax,0x40000000
+    // ...; or eax,MEM_BASE
     drvmapp4(0x0D02C583);
-    drvmapp4(0x40000000);
+    drvmapp4(MEM_BASE);
     // sahf
     drvmapp1(0x9E);
 }
@@ -598,10 +598,10 @@ drop(rra) // rotate right through carry (sic)
 
 drop(ld__nn_sp)
 {
-    // mov [0x40000000+nn],bp
+    // mov [MEM_BASE+nn],bp
     drvmapp2(0x8966);
     drvmapp1(0x2D);
-    drvmapp4(0x40000000 + MEM16(drip));
+    drvmapp4(MEM_BASE + MEM16(drip));
     drip += 2;
 }
 
@@ -635,24 +635,47 @@ drop(ccf)
 
 drop(ld_a__nn)
 {
-    // mov al,[0x40000000+nn]
+    // mov al,[MEM_BASE+nn]
     drvmapp1(0xA0);
-    drvmapp4(0x40000000 + MEM16(drip));
+    drvmapp4(MEM_BASE + MEM16(drip));
     drip += 2;
 }
 
 #ifdef UNSAVE_RAM_MAPPING
+drop(ld_a__ffn)
+{
+    // mov al,[MEM_BASE+0xFF00+n]
+    drvmapp1(0xA0);
+    drvmapp4(MEM_BASE + 0xFF00 + MEM8(drip++));
+}
+
 drop(ld_a__ffc)
 {
     // mov [.offs],bl
     drvmapp2(0x1D88);
     // ...;
     drvmapp4((uintptr_t)&drc[dri + 5]);
-    // mov al,[0x4000FF00] (.offs: 0x4000FF00)
-    drvmapp4(0x00FF000A);
-    drvmapp1(0x40);
+    // mov al,[MEM_BASE+0xFF00]
+    drvmapp1(0xA0);
+    // .offs:
+    drvmapp4(MEM_BASE + 0xFF00);
 }
 #endif
+
+drop(ld_hl_sp_n)
+{
+    // mov dx,bp; add dx,byte n
+    drvmapp4(0x66EA8966);
+    // ...
+    drvmapp2(0xC283);
+    drvmapp1(MEM8(drip++));
+#ifndef UNSAVE_FLAG_OPTIMIZATIONS
+    // lahf; and ah,0x3B (AF und CF behalten)
+    drvmapp4(0x3BE4809F);
+    // sahf
+    drvmapp1(0x9E);
+#endif
+}
 
 static void (*const dynarec_table[256])(void) = {
     dran(0x00, nop),
@@ -755,7 +778,11 @@ static void (*const dynarec_table[256])(void) = {
     dran(0xEE, xor_a_n),
 #endif
     dran(0xEF, rst_0x28),
+#ifndef UNSAVE_RAM_MAPPING
     dran(0xF0, leave_vm_imm_op1), // ld_a__ffn
+#else
+    dran(0xF0, ld_a__ffn),
+#endif
     dran(0xF1, pop_af),
 #ifndef UNSAVE_RAM_MAPPING
     dran(0xF2, leave_vm_imm_op0), // ld_a__ffc
@@ -768,6 +795,7 @@ static void (*const dynarec_table[256])(void) = {
     dran(0xF6, or_a_n),
 #endif
     dran(0xF7, rst_0x30),
+    dran(0xF8, ld_hl_sp_n),
     dran(0xFA, ld_a__nn),
     dran(0xFB, ei),
     dran(0xFF, rst_0x38)
@@ -1237,6 +1265,22 @@ drop(swap__hl)
         drvmapp2(0x589E); \
     }
 
+def_drop_rX_r(lc, b, 0xC7D0, 0xFF84)
+def_drop_rX_r(lc, c, 0xC3D0, 0xDB84)
+def_drop_rX_r(lc, d, 0xC5D0, 0xED84)
+def_drop_rX_r(lc, e, 0xC1D0, 0xC984)
+def_drop_rX_r(lc, h, 0xC6D0, 0xF684)
+def_drop_rX_r(lc, l, 0xC2D0, 0xD284)
+def_drop_rX_r(lc, a, 0xC0D0, 0xC084)
+
+def_drop_rX_r(rc, b, 0xCFD0, 0xFF84)
+def_drop_rX_r(rc, c, 0xCBD0, 0xDB84)
+def_drop_rX_r(rc, d, 0xCDD0, 0xED84)
+def_drop_rX_r(rc, e, 0xC9D0, 0xC984)
+def_drop_rX_r(rc, h, 0xCED0, 0xF684)
+def_drop_rX_r(rc, l, 0xCAD0, 0xD284)
+def_drop_rX_r(rc, a, 0xC8D0, 0xC084)
+
 def_drop_rX_r(l, b, 0xD7D0, 0xFF84)
 def_drop_rX_r(l, c, 0xD3D0, 0xDB84)
 def_drop_rX_r(l, d, 0xD5D0, 0xED84)
@@ -1253,6 +1297,70 @@ def_drop_rX_r(r, h, 0xDED0, 0xF684)
 def_drop_rX_r(r, l, 0xDAD0, 0xD284)
 def_drop_rX_r(r, a, 0xD8D0, 0xC084)
 
+drop(rlc__hl)
+{
+    // rol byte [edx],1; push eax; lahf
+    drvmapp4(0x9F5002D0);
+    // mov al,ah; and al,0x01 (CF)
+    drvmapp4(0x0124E088);
+    // cmp byte [edx],0; lahf
+    drvmapp4(0x9F003A80);
+    // and ah,0x6A (ZF); or ah,al
+    drvmapp4(0x086AE480);
+    // ...; sahf
+    drvmapp2(0x9EC4);
+    // pop eax
+    drvmapp1(0x58);
+}
+
+drop(rrc__hl)
+{
+    // ror byte [edx],1; push eax; lahf
+    drvmapp4(0x9F500AD0);
+    // mov al,ah; and al,0x01 (CF)
+    drvmapp4(0x0124E088);
+    // cmp byte [edx],0; lahf
+    drvmapp4(0x9F003A80);
+    // and ah,0x6A (ZF); or ah,al
+    drvmapp4(0x086AE480);
+    // ...; sahf
+    drvmapp2(0x9EC4);
+    // pop eax
+    drvmapp1(0x58);
+}
+
+drop(rl__hl)
+{
+    // rcl byte [edx],1; push eax; lahf
+    drvmapp4(0x9F5012D0);
+    // mov al,ah; and al,0x01 (CF)
+    drvmapp4(0x0124E088);
+    // cmp byte [edx],0; lahf
+    drvmapp4(0x9F003A80);
+    // and ah,0x6A (ZF); or ah,al
+    drvmapp4(0x086AE480);
+    // ...; sahf
+    drvmapp2(0x9EC4);
+    // pop eax
+    drvmapp1(0x58);
+}
+
+drop(rr__hl)
+{
+    // rcr byte [edx],1; push eax; lahf
+    drvmapp4(0x9F501AD0);
+    // mov al,ah; and al,0x01 (CF)
+    drvmapp4(0x0124E088);
+    // cmp byte [edx],0; lahf
+    drvmapp4(0x9F003A80);
+    // and ah,0x6A (ZF); or ah,al
+    drvmapp4(0x086AE480);
+    // ...; sahf
+    drvmapp2(0x9EC4);
+    // pop eax
+    drvmapp1(0x58);
+}
+
 #define def_drop_sXX_r(da, r, sXX) \
     drop(s##da##_##r) \
     { \
@@ -1264,39 +1372,59 @@ def_drop_rX_r(r, a, 0xD8D0, 0xC084)
         drvmapp4(0x9EEFE480); \
     }
 
-def_drop_sXX_r(la, b, 0xE7D0) // shl bh,1
-def_drop_sXX_r(la, c, 0xE3D0) // shl bl,1
-def_drop_sXX_r(la, d, 0xE5D0) // shl ch,1
-def_drop_sXX_r(la, e, 0xE1D0) // shl cl,1
-def_drop_sXX_r(la, h, 0xE6D0) // shl dh,1
-def_drop_sXX_r(la, l, 0xE2D0) // shl dl,1
-def_drop_sXX_r(la, a, 0xE0D0) // shl al,1
+def_drop_sXX_r(la,   b, 0xE7D0) // shl bh,1
+def_drop_sXX_r(la,   c, 0xE3D0) // shl bl,1
+def_drop_sXX_r(la,   d, 0xE5D0) // shl ch,1
+def_drop_sXX_r(la,   e, 0xE1D0) // shl cl,1
+def_drop_sXX_r(la,   h, 0xE6D0) // shl dh,1
+def_drop_sXX_r(la,   l, 0xE2D0) // shl dl,1
+def_drop_sXX_r(la, _hl, 0x22D0) // shl byte [edx],1
+def_drop_sXX_r(la,   a, 0xE0D0) // shl al,1
 
-def_drop_sXX_r(ra, b, 0xFFD0) // sar bh,1
-def_drop_sXX_r(ra, c, 0xFBD0) // sar bl,1
-def_drop_sXX_r(ra, d, 0xFDD0) // sar ch,1
-def_drop_sXX_r(ra, e, 0xF9D0) // sar cl,1
-def_drop_sXX_r(ra, h, 0xFED0) // sar dh,1
-def_drop_sXX_r(ra, l, 0xFAD0) // sar dl,1
-def_drop_sXX_r(ra, a, 0xF8D0) // sar al,1
+def_drop_sXX_r(ra,   b, 0xFFD0) // sar bh,1
+def_drop_sXX_r(ra,   c, 0xFBD0) // sar bl,1
+def_drop_sXX_r(ra,   d, 0xFDD0) // sar ch,1
+def_drop_sXX_r(ra,   e, 0xF9D0) // sar cl,1
+def_drop_sXX_r(ra,   h, 0xFED0) // sar dh,1
+def_drop_sXX_r(ra,   l, 0xFAD0) // sar dl,1
+def_drop_sXX_r(ra, _hl, 0x3AD0) // sar byte [edx],1
+def_drop_sXX_r(ra,   a, 0xF8D0) // sar al,1
 
-def_drop_sXX_r(rl, b, 0xEFD0) // shr bh,1
-def_drop_sXX_r(rl, c, 0xEBD0) // shr bl,1
-def_drop_sXX_r(rl, d, 0xEDD0) // shr ch,1
-def_drop_sXX_r(rl, e, 0xE9D0) // shr cl,1
-def_drop_sXX_r(rl, h, 0xEED0) // shr dh,1
-def_drop_sXX_r(rl, l, 0xEAD0) // shr dl,1
-def_drop_sXX_r(rl, a, 0xE8D0) // shr al,1
+def_drop_sXX_r(rl,   b, 0xEFD0) // shr bh,1
+def_drop_sXX_r(rl,   c, 0xEBD0) // shr bl,1
+def_drop_sXX_r(rl,   d, 0xEDD0) // shr ch,1
+def_drop_sXX_r(rl,   e, 0xE9D0) // shr cl,1
+def_drop_sXX_r(rl,   h, 0xEED0) // shr dh,1
+def_drop_sXX_r(rl,   l, 0xEAD0) // shr dl,1
+def_drop_sXX_r(rl, _hl, 0x2AD0) // shr byte [edx],1
+def_drop_sXX_r(rl,   a, 0xE8D0) // shr al,1
 #endif
 
 static void (*const dynarec_table_CB[64])(void) = {
 #ifndef UNSAVE_FLAG_OPTIMIZATIONS
+    dran(0x00, rlc_b),
+    dran(0x01, rlc_c),
+    dran(0x02, rlc_d),
+    dran(0x03, rlc_e),
+    dran(0x04, rlc_h),
+    dran(0x05, rlc_l),
+    dran(0x06, rlc__hl),
+    dran(0x07, rlc_a),
+    dran(0x08, rrc_b),
+    dran(0x09, rrc_c),
+    dran(0x0A, rrc_d),
+    dran(0x0B, rrc_e),
+    dran(0x0C, rrc_h),
+    dran(0x0D, rrc_l),
+    dran(0x0E, rrc__hl),
+    dran(0x0F, rrc_a),
     dran(0x10, rl_b),
     dran(0x11, rl_c),
     dran(0x12, rl_d),
     dran(0x13, rl_e),
     dran(0x14, rl_h),
     dran(0x15, rl_l),
+    dran(0x16, rl__hl),
     dran(0x17, rl_a),
     dran(0x18, rr_b),
     dran(0x19, rr_c),
@@ -1304,6 +1432,7 @@ static void (*const dynarec_table_CB[64])(void) = {
     dran(0x1B, rr_e),
     dran(0x1C, rr_h),
     dran(0x1D, rr_l),
+    dran(0x1E, rr__hl),
     dran(0x1F, rr_a),
     dran(0x20, sla_b),
     dran(0x21, sla_c),
@@ -1311,6 +1440,7 @@ static void (*const dynarec_table_CB[64])(void) = {
     dran(0x23, sla_e),
     dran(0x24, sla_h),
     dran(0x25, sla_l),
+    dran(0x26, sla__hl),
     dran(0x27, sla_a),
     dran(0x28, sra_b),
     dran(0x29, sra_c),
@@ -1318,6 +1448,7 @@ static void (*const dynarec_table_CB[64])(void) = {
     dran(0x2B, sra_e),
     dran(0x2C, sra_h),
     dran(0x2D, sra_l),
+    dran(0x2E, sra__hl),
     dran(0x2F, sra_a),
 #endif
     dran(0x30, swap_b),
@@ -1335,18 +1466,36 @@ static void (*const dynarec_table_CB[64])(void) = {
     dran(0x3B, srl_e),
     dran(0x3C, srl_h),
     dran(0x3D, srl_l),
+    dran(0x3E, srl__hl),
     dran(0x3F, srl_a)
 #endif
 };
 
 #ifdef UNSAVE_FLAG_OPTIMIZATIONS
 static uint16_t dynarec_const_CB[64] = {
+    [0x00] = 0xC7D0,        // rlc b = rol bh,1
+    [0x01] = 0xC3D0,        // rlc c = rol bl,1
+    [0x02] = 0xC5D0,        // rlc d = rol ch,1
+    [0x03] = 0xC1D0,        // rlc e = rol cl,1
+    [0x04] = 0xC6D0,        // rlc h = rol dh,1
+    [0x05] = 0xC2D0,        // rlc l = rol dl,1
+    [0x06] = 0x02D0,        // rlc (hl) = rol byte [edx],1
+    [0x07] = 0xC0D0,        // rlc a = rol al,1
+    [0x08] = 0xCFD0,        // rrc b = ror bh,1
+    [0x09] = 0xCBD0,        // rrc c = ror bl,1
+    [0x0A] = 0xCDD0,        // rrc d = ror ch,1
+    [0x0B] = 0xC9D0,        // rrc e = ror cl,1
+    [0x0C] = 0xCED0,        // rrc h = ror dh,1
+    [0x0D] = 0xCAD0,        // rrc l = ror dl,1
+    [0x0E] = 0x0AD0,        // rrc (hl) = ror byte [edx],1
+    [0x0F] = 0xC8D0,        // rrc a = ror al,1
     [0x10] = 0xD7D0,        // rl b = rcl bh,1
     [0x11] = 0xD3D0,        // rl c = rcl bl,1
     [0x12] = 0xD5D0,        // rl d = rcl ch,1
     [0x13] = 0xD1D0,        // rl e = rcl cl,1
     [0x14] = 0xD6D0,        // rl h = rcl dh,1
     [0x15] = 0xD2D0,        // rl l = rcl dl,1
+    [0x16] = 0x12D0,        // rl (hl) = rcl byte [edx],1
     [0x17] = 0xD0D0,        // rl a = rcl al,1
     [0x18] = 0xDFD0,        // rr b = rcr bh,1
     [0x19] = 0xDBD0,        // rr c = rcr bl,1
@@ -1354,6 +1503,7 @@ static uint16_t dynarec_const_CB[64] = {
     [0x1B] = 0xD9D0,        // rr e = rcr cl,1
     [0x1C] = 0xDED0,        // rr h = rcr dh,1
     [0x1D] = 0xDAD0,        // rr l = rcr dl,1
+    [0x1E] = 0x1AD0,        // rr (hl) = rcr byte [edx],1
     [0x1F] = 0xD8D0,        // rr a = rcr al,1
     [0x20] = 0xE7D0,        // sla b = shl bh,1
     [0x21] = 0xE3D0,        // sla c = shl bl,1
@@ -1361,6 +1511,7 @@ static uint16_t dynarec_const_CB[64] = {
     [0x23] = 0xE1D0,        // sla e = shl cl,1
     [0x24] = 0xE6D0,        // sla h = shl dh,1
     [0x25] = 0xE2D0,        // sla l = shl dl,1
+    [0x26] = 0x22D0,        // sla (hl) = shl byte [edx],1
     [0x27] = 0xE0D0,        // sla a = shl al,1
     [0x28] = 0xFFD0,        // sra b = sar bh,1
     [0x29] = 0xFBD0,        // sra c = sar bl,1
@@ -1368,6 +1519,7 @@ static uint16_t dynarec_const_CB[64] = {
     [0x2B] = 0xF9D0,        // sra e = sar cl,1
     [0x2C] = 0xFED0,        // sra h = sar dh,1
     [0x2D] = 0xFAD0,        // sra l = sar dl,1
+    [0x2E] = 0x3AD0,        // sra (hl) = sar byte [edx],1
     [0x2F] = 0xF8D0,        // sra a = sar al,1
     [0x38] = 0xEFD0,        // srl b = shr bh,1
     [0x39] = 0xEBD0,        // srl c = shr bl,1
@@ -1375,6 +1527,7 @@ static uint16_t dynarec_const_CB[64] = {
     [0x3B] = 0xE9D0,        // srl e = shr cl,1
     [0x3C] = 0xEED0,        // srl h = shr dh,1
     [0x3D] = 0xEAD0,        // srl l = shr dl,1
+    [0x3E] = 0x2AD0,        // srl (hl) = shr byte [edx],1
     [0x3F] = 0xE8D0,        // srl a = shr al,1
 };
 #endif

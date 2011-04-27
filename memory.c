@@ -28,6 +28,7 @@ uint8_t *oam, *hram, *full_vidram;
 
 #ifdef UNSAVE_RAM_MAPPING
 extern struct io io_state;
+extern uint8_t ie;
 #endif
 
 #ifdef MMAP_ECHO
@@ -142,6 +143,8 @@ void init_memory(void)
 #undef io_state
     io_state = (struct io *)((uintptr_t)hmapping + 0xF00);
     hram = (void *)((uintptr_t)hmapping + 0xF80);
+#undef ie
+    ie = (uint8_t *)((uintptr_t)hmapping + 0xFFF);
 #endif
 
     full_vidram = mmap(NULL, 0x4000, PROT_READ | PROT_WRITE, MAP_SHARED, vramfd, 0x0000);

@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -20,7 +21,7 @@ extern volatile int ime;
 extern bool interrupt_issued;
 
 #ifdef CACHE_STATS
-unsigned cache_hits = 0, cache_misses = 0, cache_frees = 0, uncached = 0;
+unsigned cache_hits = 0, cache_misses = 0, uncached = 0;
 #endif
 #ifdef SEGV_STATS
 extern unsigned segfaults;
@@ -44,10 +45,12 @@ struct dynarec_cache
 
     uint16_t ip;
     exec_unit_t code;
+
+    unsigned bank;
 };
 
 static struct dynarec_cache base_rom[CACHES_SIZE];
-static struct dynarec_cache **banked_rom_caches, *banked_rom;
+static struct dynarec_cache banked_rom[CACHES_SIZE];
 #ifdef UNSAVE_RAM_CACHING
 static struct dynarec_cache ram_cache[CACHES_SIZE];
 #endif
@@ -59,18 +62,6 @@ static exec_unit_t variable_eu;
 #define vmapp1(b, c, v) (b)[(c)++] = (v)
 #define vmapp2(b, c, v) *((uint16_t *)&((b)[(c)])) = (v); (c) += 2
 #define vmapp4(b, c, v) *((uint32_t *)&((b)[(c)])) = (v); (c) += 4
-
-// Reserviert Speicher der Größe CODE_BUFSZ, in dem Code ausgeführt werden kann
-static exec_unit_t allocate_eu(void)
-{
-    return (exec_unit_t)(uintptr_t)mmap(NULL, CODE_BUFSZ, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-}
-
-// Gibt solch einen Speicherbereich wieder frei
-static void free_eu(exec_unit_t ptr)
-{
-    munmap((void *)(uintptr_t)ptr, CODE_BUFSZ);
-}
 
 #include "dynarec/op-info.c"
 #include "dynarec/vm-exit.c"
@@ -409,25 +400,19 @@ static void dynarec(exec_unit_t eu, uint16_t ip)
 
 // Sucht eine Ausführungseinheit aus dem angegebenen Cache, wenn sie da nicht
 // gefunden wird, dann wird eine neue erstellt und in den Cache geladen
-static inline exec_unit_t get_from_cache(struct dynarec_cache *c, uint16_t ip)
+static inline exec_unit_t get_from_cache(struct dynarec_cache *c, unsigned bank, uint16_t ip)
 {
     if (!c[ip & (CACHES_SIZE - 1)].in_use)
         c[ip & (CACHES_SIZE - 1)].in_use = true;
     else
     {
-        if (c[ip & (CACHES_SIZE - 1)].ip == ip)
+        if ((c[ip & (CACHES_SIZE - 1)].ip == ip) && (c[ip & (CACHES_SIZE - 1)].bank == bank))
         {
 #ifdef CACHE_STATS
             cache_hits++;
 #endif
             return c[ip & (CACHES_SIZE - 1)].code;
         }
-
-#ifdef CACHE_STATS
-        cache_frees++;
-#endif
-
-        free_eu(c[ip & (CACHES_SIZE - 1)].code);
     }
 
 #ifdef CACHE_STATS
@@ -435,21 +420,23 @@ static inline exec_unit_t get_from_cache(struct dynarec_cache *c, uint16_t ip)
 #endif
 
     c[ip & (CACHES_SIZE - 1)].ip = ip;
+    c[ip & (CACHES_SIZE - 1)].bank = bank;
 
-    c[ip & (CACHES_SIZE - 1)].code = allocate_eu();
-    dynarec((c[ip & (CACHES_SIZE - 1)].code = allocate_eu()), ip);
+    dynarec(c[ip & (CACHES_SIZE - 1)].code, ip);
 
     return c[ip & (CACHES_SIZE - 1)].code;
 }
+
+static unsigned current_rom_bank = 1;
 
 // Sucht eine Ausführungseinheit in ihrem zugehörigen Cache, wenn sie nicht
 // vorhanden ist, wird sie neu generiert und in den Cache geladen
 static exec_unit_t cache_get(uint16_t ip)
 {
     if (likely(ip < 0x4000))
-        return get_from_cache(base_rom, ip);
+        return get_from_cache(base_rom, 0, ip);
     else if (likely(ip < 0x8000))
-        return get_from_cache(banked_rom, ip);
+        return get_from_cache(banked_rom, current_rom_bank, ip);
     else
     {
 #ifndef UNSAVE_RAM_CACHING
@@ -460,7 +447,7 @@ static exec_unit_t cache_get(uint16_t ip)
         dynarec(variable_eu, ip);
         return variable_eu;
 #else
-        return get_from_cache(ram_cache, ip);
+        return get_from_cache(ram_cache, 0, ip);
 #endif
     }
 }
@@ -468,7 +455,7 @@ static exec_unit_t cache_get(uint16_t ip)
 // Zeigt an, dass sich der ROM zwischen 0x4000 und 0x7FFF geändert hat.
 void change_banked_rom(unsigned new_bank)
 {
-    banked_rom = banked_rom_caches[new_bank];
+    current_rom_bank = new_bank;
 }
 
 extern unsigned cumulative_cycles;
@@ -502,8 +489,7 @@ static void print_cum_cycles(int status, void *arg)
     printf("Insgesamt %i Rekompilierungsanfragen.\n", total);;
     printf("Davon %i (%g %%) echt rekompiliert, %i (%g %%) gecachet.\n", cache_misses + uncached, (double)(cache_misses + uncached) * 100. / (double)total, cache_hits, (double)cache_hits * 100. / (double)total);
     printf("%i (%g %%) durch den Cache, %i (%g %%) vorbei.\n", cached, (double)cached * 100. / (double)total, uncached, (double)uncached * 100. / (double)total);
-    printf("%i (%g %%) Cache-Treffer, %i (%g %%) Cache-Verfehler.\n", cache_hits, (double)cache_hits * 100. / (double)cached, cache_misses, (double)cache_misses * 100. / (double)cached);
-    printf("%i Blöcke gelöscht.\n\n", cache_frees);
+    printf("%i (%g %%) Cache-Treffer, %i (%g %%) Cache-Verfehler.\n\n", cache_hits, (double)cache_hits * 100. / (double)cached, cache_misses, (double)cache_misses * 100. / (double)cached);
 #endif
 
 #ifdef SEGV_STATS
@@ -578,11 +564,16 @@ void begin_execution(void)
     io_state.wx     = 0x00;
     io_state.hdma5  = 0xFF;
 
-    variable_eu = allocate_eu();
+    variable_eu = (exec_unit_t)(uintptr_t)mmap(NULL, CODE_BUFSZ, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
-    banked_rom_caches = calloc(rom_size, sizeof(banked_rom_caches[0]));
-    for (size_t b = 0; b < rom_size; b++)
-        banked_rom_caches[b] = calloc(CACHES_SIZE, sizeof(banked_rom_caches[b][0]));
+    uintptr_t full_cache = (uintptr_t)mmap(NULL, 3 * CACHES_SIZE * CODE_BUFSZ, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    for (size_t e = 0; e < CACHES_SIZE; e++)
+    {
+        base_rom[e].code   = (exec_unit_t)(full_cache + 0 * CACHES_SIZE * CODE_BUFSZ);
+        banked_rom[e].code = (exec_unit_t)(full_cache + 1 * CACHES_SIZE * CODE_BUFSZ);
+        ram_cache[e].code  = (exec_unit_t)(full_cache + 2 * CACHES_SIZE * CODE_BUFSZ);
+        full_cache += CODE_BUFSZ;
+    }
 
     on_exit(&print_cum_cycles, NULL);
 
@@ -649,10 +640,10 @@ void begin_execution(void)
                 case 0xE2: // LD (0xFF00+C),A
                     hmem_write8(0x0F00 + (vm_bc & 0xFF), vm_fa & 0xFF);
                     break;
+#ifndef UNSAVE_RAM_MAPPING
                 case 0xF0: // LD A,(0xFF00+n)
                     vm_fa = (vm_fa & 0xFF00) | hmem_read8(0x0F00 + MEM8(vm_ip++));
                     break;
-#ifndef UNSAVE_RAM_MAPPING
                 case 0xF2: // LD A,(0xFF00+C)
                     vm_fa = (vm_fa & 0xFF00) | hmem_read8(0x0F00 + (vm_bc & 0xFF));
                     break;

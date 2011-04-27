@@ -14,15 +14,18 @@
 #define MEM_BASE 0x40000000UL
 
 // ought to be enough
-#define CODE_BUFSZ 0x1000
-#define CODE_EXITI (CODE_BUFSZ - 0x0100)
+#define CODE_BUFSZ 0x400
+#define CODE_EXITI (CODE_BUFSZ - 0x0040)
 
 // Maximale Anzahl von Zyklen, die in einem übersetzten Block ausgeführt werden
 // sollen
 #define MAX_CYCLES 32
 
 // Anzahl der Einträge pro Cache
-#define CACHES_SIZE 0x400
+// 0x4000 bedeutet bei den ROMs, dass alle Adressen gecachet werden
+// (Überschneidungen treten dann nur wegen Bankswitches auf) -- der
+// Speicherverbrauch ist dementsprechend hoch (48 MB)
+#define CACHES_SIZE 0x4000
 
 // Flags nur aktualisieren, soweit dies sinnvoll ist -- dies betrifft vor allem
 // das AF sowie bei einigen Operationen (wie SWAP und Rotationen) das ZF.
@@ -186,6 +189,7 @@ struct io
 
 #ifdef UNSAVE_RAM_MAPPING
 #define io_state (*io_state)
+#define ie (*ie)
 #endif
 
 #define INT_P10_P13   (1 << 4)

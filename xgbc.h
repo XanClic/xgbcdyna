@@ -11,6 +11,15 @@
 #define CODE_BUFSZ 0x1000
 #define CODE_EXITI (CODE_BUFSZ - 0x0100)
 
+#define MAX_CYCLES 32
+
+#define CACHES_SIZE 0x400
+
+#define UNSAVE_FLAG_OPTIMIZATIONS
+#define UNSAVE_RAM_CACHING
+
+#define STATS
+
 #define likely(x)     __builtin_expect((x), 1)
 #define unlikely(x)   __builtin_expect((x), 0)
 
@@ -91,7 +100,6 @@ struct io
 #define REG_DE 0x04
 #define REG_HL 0x08
 #define REG_SP 0x10
-#define REG_IP 0x20
 
 #define KEY_A      (1 << 0)
 #define KEY_B      (1 << 1)

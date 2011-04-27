@@ -19,13 +19,20 @@ volatile uint32_t vm_fa, vm_bc, vm_de, vm_hl, vm_sp, vm_ip, cycles_gone = 0;
 extern volatile int ime;
 extern bool interrupt_issued;
 
-#ifdef STATS
+#ifdef CACHE_STATS
 unsigned cache_hits = 0, cache_misses = 0, cache_frees = 0, uncached = 0;
+#endif
+#ifdef SEGV_STATS
 extern unsigned segfaults;
+#endif
+#ifdef CYCLE_STATS
+uintmax_t dyna_cycles = 0, update_cycles = 0, exec_cycles = 0, evade_cycles = 0, halt_cycles = 0;
+unsigned vhalt_cycles = 0;
 #endif
 
 extern const uint8_t flag_table[256], reverse_flag_table[256];
 extern unsigned rom_size;
+extern struct io io_state;
 
 #define vm_af (((vm_fa & 0xFF) << 8) | ((vm_fa & 0x4000) ? 0x80 : 0x00) | ((vm_fa & 0x1000) ? 0x20 : 0x00) | ((vm_fa & 0x0100) ? 0x10 : 0x00))
 
@@ -398,20 +405,20 @@ static inline exec_unit_t get_from_cache(struct dynarec_cache *c, uint16_t ip)
     {
         if (c[ip & (CACHES_SIZE - 1)].ip == ip)
         {
-#ifdef STATS
+#ifdef CACHE_STATS
             cache_hits++;
 #endif
             return c[ip & (CACHES_SIZE - 1)].code;
         }
 
-#ifdef STATS
+#ifdef CACHE_STATS
         cache_frees++;
 #endif
 
         free_eu(c[ip & (CACHES_SIZE - 1)].code);
     }
 
-#ifdef STATS
+#ifdef CACHE_STATS
     cache_misses++;
 #endif
 
@@ -434,7 +441,7 @@ static exec_unit_t cache_get(uint16_t ip)
     else
     {
 #ifndef UNSAVE_RAM_CACHING
-#ifdef STATS
+#ifdef CACHE_STATS
         uncached++;
 #endif
 
@@ -476,7 +483,7 @@ static void print_cum_cycles(int status, void *arg)
     printf("Verhältnis: %g-fach.\n\n", (double)cumulative_cycles * 1. / (1.048576 * (double)(end - start)));
 
 
-#ifdef STATS
+#ifdef CACHE_STATS
     unsigned total = cache_hits + cache_misses + uncached, cached = cache_hits + cache_misses;
 
     printf("Cache-Statistik:\n");
@@ -485,8 +492,27 @@ static void print_cum_cycles(int status, void *arg)
     printf("%i (%g %%) durch den Cache, %i (%g %%) vorbei.\n", cached, (double)cached * 100. / (double)total, uncached, (double)uncached * 100. / (double)total);
     printf("%i (%g %%) Cache-Treffer, %i (%g %%) Cache-Verfehler.\n", cache_hits, (double)cache_hits * 100. / (double)cached, cache_misses, (double)cache_misses * 100. / (double)cached);
     printf("%i Blöcke gelöscht.\n\n", cache_frees);
+#endif
 
-    printf("%i Speicherzugriffsfehler abgefangen.\n\n", segfaults);
+#ifdef SEGV_STATS
+    printf("%i Speicherzugriffsfehler abgefangen (%i pro Sekunde).\n\n", segfaults, (int)((double)segfaults * 1000000. / (double)(end - start) + .5));
+#endif
+
+#ifdef CYCLE_STATS
+    uint32_t itscres = determine_tsc_resolution();
+    double tscres = (double)itscres * 1000.;
+    double cycsum = dyna_cycles + update_cycles + exec_cycles + evade_cycles;
+
+    printf("TSC läuft mit %i Zyklen pro Millisekunde (%g GHz).\n", itscres, tscres / 1000000000.);
+    printf("%lli Zyklen im Übersetzer, %lli in der Ausgabe, %lli in der Ausführung, %lli im Ausweichemulator.\n", dyna_cycles, update_cycles, exec_cycles, evade_cycles);
+    printf("== %g s (%g %%), %g s (%g %%), ", (double)dyna_cycles / tscres, (double)dyna_cycles * 100. / cycsum, (double)update_cycles / tscres, (double)update_cycles * 100. / cycsum);
+    printf("%g s (%g %%), %g s (%g %%).\n", (double)exec_cycles / tscres, (double)exec_cycles * 100. / cycsum, (double)evade_cycles / tscres, (double)evade_cycles * 100. / cycsum);
+
+    double time_sum = cycsum / tscres;
+    printf("%g s nicht erfasst.\n\n", (double)(end - start) / 1000000. - time_sum);
+
+    printf("%lli Zyklen (%g s, %g %%) im HALT, ", halt_cycles, (double)halt_cycles / tscres, (double)halt_cycles * 100. / cycsum);
+    printf("virtuelle CPU-Auslastung: %u von %u Zyklen (%g %%).\n\n", cumulative_cycles - vhalt_cycles, cumulative_cycles, (double)(cumulative_cycles - vhalt_cycles) / (double)cumulative_cycles);
 #endif
 
 
@@ -503,6 +529,43 @@ void begin_execution(void)
     vm_sp = MEM_BASE + 0xFFFE;
     vm_ip =            0x0100;
 
+    io_state.p1     = 0x00;
+    io_state.sb     = 0xFF;
+    io_state.sc     = 0x00;
+    io_state.div    = 0x00;
+    io_state.tima   = 0x00;
+    io_state.tma    = 0x00;
+    io_state.tac    = 0x00;
+    io_state.nr10   = 0x80;
+    io_state.nr11   = 0xBF;
+    io_state.nr12   = 0xF3;
+    io_state.nr14   = 0xBF;
+    io_state.nr21   = 0x3F;
+    io_state.nr22   = 0x00;
+    io_state.nr24   = 0xBF;
+    io_state.nr30   = 0x7F;
+    io_state.nr31   = 0xFF;
+    io_state.nr32   = 0x9F;
+    io_state.nr33   = 0xBF;
+    io_state.nr41   = 0xFF;
+    io_state.nr42   = 0x00;
+    io_state.nr43   = 0x00;
+    io_state.nr44   = 0xBF;
+    io_state.nr50   = 0x77;
+    io_state.nr51   = 0xF3;
+    io_state.nr52   = 0xF1;
+    io_state.lcdc   = 0x83;
+    io_state.stat   = 0x01;
+    io_state.scy    = 0x00;
+    io_state.scx    = 0x00;
+    io_state.lyc    = 0x00;
+    io_state.bgp    = 0xFC;
+    io_state.obp0   = 0xFF;
+    io_state.obp1   = 0xFF;
+    io_state.wy     = 0x00;
+    io_state.wx     = 0x00;
+    io_state.hdma5  = 0xFF;
+
     variable_eu = allocate_eu();
 
     banked_rom_caches = calloc(rom_size, sizeof(banked_rom_caches[0]));
@@ -513,11 +576,19 @@ void begin_execution(void)
 
     gettimeofday(&stp, NULL);
 
+#ifdef CYCLE_STATS
+    uintmax_t v1, v2, v3, v4;
+#endif
+
     for (;;)
     {
-        while (!compilability[MEM8(vm_ip)])
+#ifdef CYCLE_STATS
+        __asm__ __volatile__ ("rdtsc" : "=A"(v1));
+#endif
+        uint8_t op;
+        while (!compilability[(op = MEM8(vm_ip))])
         {
-            uint8_t op = MEM8(vm_ip++);
+            vm_ip++;
             cycles_gone += cycles[op];
 
             // Diese OPs segfaulten in jedem Fall, sodass es schön dämlich wäre,
@@ -526,10 +597,33 @@ void begin_execution(void)
             {
                 case 0x76: // HALT
                     interrupt_issued = false;
+#ifdef CYCLE_STATS
+                    __asm__ __volatile__ ("rdtsc" : "=A"(v3));
+                    evade_cycles += v3 - v1;
+                    vhalt_cycles += cycles[0x76];
+#endif
                     update_cpu(cycles_gone);
+#ifdef CYCLE_STATS
+                    __asm__ __volatile__ ("rdtsc" : "=A"(v4));
+                    update_cycles += v4 - v3;
+#endif
                     cycles_gone = 0;
                     while (!interrupt_issued)
+                    {
+#ifdef CYCLE_STATS
+                        vhalt_cycles++;
+                        __asm__ __volatile__ ("rdtsc" : "=A"(v2));
+#endif
                         update_cpu(1);
+#ifdef CYCLE_STATS
+                        __asm__ __volatile__ ("rdtsc" : "=A"(v4));
+                        update_cycles += v4 - v2;
+#endif
+                    }
+#ifdef CYCLE_STATS
+                    __asm__ __volatile__ ("rdtsc" : "=A"(v1));
+                    halt_cycles += v1 - v3;
+#endif
                     break;
                 case 0xE0: // LD (0xFF00+n),A
                     hmem_write8(0x0F00 + MEM8(vm_ip++), vm_fa & 0xFF);
@@ -540,20 +634,39 @@ void begin_execution(void)
                 case 0xF0: // LD A,(0xFF00+n)
                     vm_fa = (vm_fa & 0xFF00) | hmem_read8(0x0F00 + MEM8(vm_ip++));
                     break;
+#ifndef UNSAVE_RAM_MAPPING
                 case 0xF2: // LD A,(0xFF00+C)
                     vm_fa = (vm_fa & 0xFF00) | hmem_read8(0x0F00 + (vm_bc & 0xFF));
                     break;
+#endif
                 default:
                     vm_ip--;
                     printf("Unbekannter nicht kompilierbarer Opcode %02X (0x%04X).\n", op, vm_ip);
                     exit(1);
             }
         }
-
+#ifdef CYCLE_STATS
+        __asm__ __volatile__ ("rdtsc" : "=A"(v2));
+        evade_cycles += v2 - v1;
+#endif
         update_cpu(cycles_gone);
+#ifdef CYCLE_STATS
+        __asm__ __volatile__ ("rdtsc" : "=A"(v1));
+        update_cycles += v1 - v2;
+#endif
         cycles_gone = 0;
 
-        cache_get(vm_ip)();
+        exec_unit_t current_eu = cache_get(vm_ip);
+#ifdef CYCLE_STATS
+        __asm__ __volatile__ ("rdtsc" : "=A"(v2));
+        dyna_cycles += v2 - v1;
+#endif
+
+        current_eu();
+#ifdef CYCLE_STATS
+        __asm__ __volatile__ ("rdtsc" : "=A"(v1));
+        exec_cycles += v1 - v2;
+#endif
 
         // printf("PC=%04x AF=%04x BC=%04x DE=%04x HL=%04x SP=%04x\n", vm_ip & 0xFFFF, vm_af & 0xFFFF, vm_bc & 0xFFFF, vm_de & 0xFFFF, vm_hl & 0xFFFF, vm_sp & 0xFFFF);
     }

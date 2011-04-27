@@ -17,8 +17,11 @@
 
 #define UNSAVE_FLAG_OPTIMIZATIONS
 #define UNSAVE_RAM_CACHING
+#define UNSAVE_RAM_MAPPING
 
-#define STATS
+#define CACHE_STATS
+#define SEGV_STATS
+#define CYCLE_STATS
 
 #define likely(x)     __builtin_expect((x), 1)
 #define unlikely(x)   __builtin_expect((x), 0)
@@ -89,6 +92,10 @@ struct io
     uint8_t rsvd11[15];
 } __attribute__((packed));
 
+#ifdef UNSAVE_RAM_MAPPING
+#define io_state (*io_state)
+#endif
+
 #define INT_P10_P13   (1 << 4)
 #define INT_SERIAL    (1 << 3)
 #define INT_TIMER     (1 << 2)
@@ -153,6 +160,7 @@ bool check_cartridge(FILE *fp);
 void init_memory(void);
 void install_segv_handler(void);
 void init_video(unsigned multiplier);
+uint32_t determine_tsc_resolution(void);
 
 void change_banked_rom(unsigned new_bank);
 
@@ -173,9 +181,13 @@ void mem_select_vram_bank(unsigned bank);
 
 static inline uint8_t MEM8(uint16_t addr)
 {
+#ifndef UNSAVE_RAM_MAPPING
     if (likely(addr < 0xF000))
         return ((uint8_t *)(uintptr_t)MEM_BASE)[addr];
     return hmem_read8(addr & 0x0FFF);
+#else
+    return ((uint8_t *)(uintptr_t)MEM_BASE)[addr];
+#endif
 }
 
 static inline uint16_t MEM16(uint16_t addr)

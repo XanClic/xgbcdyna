@@ -641,6 +641,19 @@ drop(ld_a__nn)
     drip += 2;
 }
 
+#ifdef UNSAVE_RAM_MAPPING
+drop(ld_a__ffc)
+{
+    // mov [.offs],bl
+    drvmapp2(0x1D88);
+    // ...;
+    drvmapp4((uintptr_t)&drc[dri + 5]);
+    // mov al,[0x4000FF00] (.offs: 0x4000FF00)
+    drvmapp4(0x00FF000A);
+    drvmapp1(0x40);
+}
+#endif
+
 static void (*const dynarec_table[256])(void) = {
     dran(0x00, nop),
 #ifndef UNSAVE_FLAG_OPTIMIZATIONS
@@ -744,7 +757,11 @@ static void (*const dynarec_table[256])(void) = {
     dran(0xEF, rst_0x28),
     dran(0xF0, leave_vm_imm_op1), // ld_a__ffn
     dran(0xF1, pop_af),
+#ifndef UNSAVE_RAM_MAPPING
     dran(0xF2, leave_vm_imm_op0), // ld_a__ffc
+#else
+    dran(0xF2, ld_a__ffc),
+#endif
     dran(0xF3, di),
     dran(0xF5, push_af),
 #ifndef UNSAVE_FLAG_OPTIMIZATIONS

@@ -16,44 +16,7 @@ extern void update_cpu(unsigned cycles);
 
 extern uint8_t keystates;
 
-struct io io_state = {
-    .p1     = 0x00,
-    .sb     = 0xFF,
-    .sc     = 0x00,
-    .div    = 0x00,
-    .tima   = 0x00,
-    .tma    = 0x00,
-    .tac    = 0x00,
-    .nr10   = 0x80,
-    .nr11   = 0xBF,
-    .nr12   = 0xF3,
-    .nr14   = 0xBF,
-    .nr21   = 0x3F,
-    .nr22   = 0x00,
-    .nr24   = 0xBF,
-    .nr30   = 0x7F,
-    .nr31   = 0xFF,
-    .nr32   = 0x9F,
-    .nr33   = 0xBF,
-    .nr41   = 0xFF,
-    .nr42   = 0x00,
-    .nr43   = 0x00,
-    .nr44   = 0xBF,
-    .nr50   = 0x77,
-    .nr51   = 0xF3,
-    .nr52   = 0xF1,
-    .lcdc   = 0x83,
-    .stat   = 0x01,
-    .scy    = 0x00,
-    .scx    = 0x00,
-    .lyc    = 0x00,
-    .bgp    = 0xFC,
-    .obp0   = 0xFF,
-    .obp1   = 0xFF,
-    .wy     = 0x00,
-    .wx     = 0x00,
-    .hdma5  = 0xFF
-};
+struct io io_state;
 
 uint8_t ie = 0;
 

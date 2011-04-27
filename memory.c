@@ -15,6 +15,9 @@
 // #define MMAP_ECHO
 
 int romfd, ramfd = -1, vramfd, wramfd;
+#ifdef UNSAVE_RAM_MAPPING
+int hmemfd;
+#endif
 static int cramb = 0, cromb = 1;
 static bool ram_enabled = false, ram_mapped;
 static time_t latched_time;
@@ -22,6 +25,10 @@ static time_t latched_time;
 extern unsigned mbc;
 
 uint8_t *oam, *hram, *full_vidram;
+
+#ifdef UNSAVE_RAM_MAPPING
+extern struct io io_state;
+#endif
 
 #ifdef MMAP_ECHO
 char path_buf[PATH_MAX];
@@ -51,6 +58,11 @@ static void unlink_shms(int status, void *arg)
     close(romfd);
     close(vramfd);
     close(wramfd);
+
+#ifdef UNSAVE_RAM_MAPPING
+    close(hmemfd);
+    shm_unlink("/xgbcdyna-hmem");
+#endif
 
     shm_unlink("/xgbcdyna-vram");
     shm_unlink("/xgbcdyna-wram");
@@ -108,7 +120,6 @@ void init_memory(void)
     mmap_file(0xC000, 0x1000, PROT_READ | PROT_WRITE, wramfd, 0x0000);
     mmap_file(0xD000, 0x1000, PROT_READ | PROT_WRITE, wramfd, 0x1000);
     mmap_file(0xE000, 0x1000, PROT_READ | PROT_WRITE, wramfd, 0x0000);
-    munmap_stuff(0xF000, 0x1000);
 
     if (ramfd == -1)
         ram_mapped = false;
@@ -118,8 +129,20 @@ void init_memory(void)
         ram_mapped = true;
     }
 
+#ifndef UNSAVE_RAM_MAPPING
     oam = malloc(256);
     hram = malloc(128);
+    munmap_stuff(0xF000, 0x1000);
+#else
+    hmemfd = shm_open("/xgbdyna-hmem", O_RDWR | O_CREAT | O_TRUNC, 0644);
+    ftruncate(hmemfd, 0x1000);
+    mmap_file(0xF000, 0x1000, PROT_READ, hmemfd, 0x0000);
+    void *hmapping = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE, MAP_SHARED, hmemfd, 0x0000);
+    oam = (void *)((uintptr_t)hmapping + 0xE00);
+#undef io_state
+    io_state = (struct io *)((uintptr_t)hmapping + 0xF00);
+    hram = (void *)((uintptr_t)hmapping + 0xF80);
+#endif
 
     full_vidram = mmap(NULL, 0x4000, PROT_READ | PROT_WRITE, MAP_SHARED, vramfd, 0x0000);
 }

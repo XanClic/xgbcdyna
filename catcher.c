@@ -20,7 +20,7 @@
 #include "xgbc.h"
 
 
-#ifdef STATS
+#ifdef SEGV_STATS
 unsigned segfaults = 0;
 #endif
 
@@ -199,7 +199,7 @@ static void segv_handler(int signo, siginfo_t *info, void *context)
     if (signo != SIGSEGV)
         return;
 
-#ifdef STATS
+#ifdef SEGV_STATS
     segfaults++;
 #endif
 

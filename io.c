@@ -32,27 +32,37 @@ static int lcd_cycles;
 
 void hdma_copy_16b(void)
 {
-    uintptr_t src = ((uint16_t)io_state.hdma1 << 8) | io_state.hdma2;
-    uintptr_t dst = ((uint16_t)io_state.hdma3 << 8) | io_state.hdma4;
+    uint32_t *src = (uint32_t *)(((uintptr_t) io_state.hdma1         << 8) | ((uintptr_t)io_state.hdma2 & 0xF0) | MEM_BASE         );
+    uint32_t *dst = (uint32_t *)(((uintptr_t)(io_state.hdma3 & 0x1F) << 8) | ((uintptr_t)io_state.hdma4 & 0xF0) | MEM_BASE | 0x8000);
 
-    src &= 0xFFF0;
-    src += MEM_BASE;
-    dst &= 0x1FF0;
-    dst += MEM_BASE | 0x8000;
-
+#ifdef UNSAVE_RAM_MAPPING
+    *(dst++) = *(src++);
+    *(dst++) = *(src++);
+    *(dst++) = *(src++);
+    *(dst++) = *(src++);
+#else
     if (likely(src < 0xF000))
-        memcpy((void *)dst, (void *)src, 16);
+    {
+        *(dst++) = *(src++);
+        *(dst++) = *(src++);
+        *(dst++) = *(src++);
+        *(dst++) = *(src++);
+    }
     else
+    {
+        uintptr_t srcp = (uintptr_t)src;
+        uint8_t *dst8 = (uint8_t *)dst;
         for (size_t i = 0; i < 16; i++)
-            ((uint8_t *)dst)[i] = hmem_read8(src & 0xFFF);
+            *(dst8++) = hmem_read8(srcp++ & 0xFFF);
+        src += 4;
+        dst += 4;
+    }
+#endif
 
-    src += 16;
-    dst += 16;
-
-    io_state.hdma1 = src >> 8;
-    io_state.hdma2 = src & 0xFF;
-    io_state.hdma3 = dst >> 8;
-    io_state.hdma4 = dst & 0xFF;
+    io_state.hdma1 = ((uintptr_t)src >> 8) & 0xFF;
+    io_state.hdma2 =  (uintptr_t)src       & 0xFF;
+    io_state.hdma3 = ((uintptr_t)dst >> 8) & 0xFF;
+    io_state.hdma4 =  (uintptr_t)dst       & 0xFF;
 
     if (--io_state.hdma5 & 0x80)
         hdma_on = false;
@@ -275,6 +285,9 @@ void io_write(uint8_t reg, uint8_t val)
             io_state.stat |= val & 0x78;
             break;
         case 0x46: // DMA -- DMA transfer to OAM
+#ifdef UNSAVE_RAM_MAPPING
+            memcpy(oam, (void *)(MEM_BASE + ((uintptr_t)val << 8)), 0xA0);
+#else
             if (val < 0xF0)
                 memcpy(oam, (void *)(MEM_BASE + ((uintptr_t)val << 8)), 0xA0);
             else
@@ -283,6 +296,7 @@ void io_write(uint8_t reg, uint8_t val)
                 for (size_t a = 0; a < 0xA0; a++)
                     oam[a] = hmem_read8(base + a);
             }
+#endif
             break;
         case 0x4F: // VBK -- select VRAM bank
             val &= 1;

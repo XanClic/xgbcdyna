@@ -207,6 +207,27 @@ static size_t x86_execute(ucontext_t *ac)
                     return 3;
             }
             break;
+        case 0xD0:
+            switch (i[1])
+            {
+                case 0x1A: // rcr byte [edx],1
+                    v1 = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF);
+                    result = (uint8_t)(v1 >> 1) | (uint8_t)(v1 << 7);
+                    unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, result);
+                    ac->uc_mcontext.gregs[REG_EFL] &= ~0xC5; // SF, ZF, PF und CF löschen
+                    // ZF und CF entsprechend setzen, SF/PF brauche ich nicht
+                    // Hinweis: Auf x86 wird ZF eigentlich nicht beeinflusst, aber da dies garantiert ein VM-Befehl ist, kann es nicht schaden
+                    ac->uc_mcontext.gregs[REG_EFL] |= (!result << 6) | (v1 & 1);
+                    return 2;
+                case 0x2A: // shr byte [edx],1
+                    v1 = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF);
+                    unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, (result = v1 >> 1));
+                    ac->uc_mcontext.gregs[REG_EFL] &= ~0xC5; // SF, ZF, PF und CF löschen
+                    // ZF und CF entsprechend setzen, SF/PF brauche ich nicht
+                    ac->uc_mcontext.gregs[REG_EFL] |= (!result << 6) | (v1 & 1);
+                    return 2;
+            }
+            break;
         case 0xF6:
             switch (i[1])
             {

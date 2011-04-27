@@ -8,8 +8,13 @@
 
 unsigned cumulative_cycles = 0;
 
+#ifdef CYCLE_STATS
+extern unsigned vhalt_cycles;
+#endif
+
 extern uint8_t *oam, *full_vidram;
 extern uint16_t bpalette[32], opalette[32];
+extern uint32_t ibpalette[32], iopalette[32];
 extern uint8_t *btm[2], *bwtd[2], *wtm[2];
 
 extern void update_cpu(unsigned cycles);
@@ -23,6 +28,7 @@ uint8_t ie = 0;
 static bool timer_running = false, hdma_on = false;
 bool lcd_on = true;
 static unsigned timer_div = 0;
+static int lcd_cycles;
 
 void hdma_copy_16b(void)
 {
@@ -78,7 +84,8 @@ void update_timer(bool enable, unsigned mode)
 
 void inc_timer(unsigned cycles)
 {
-    static unsigned cum_cycles = 0, cum_cycles_div = 0, lcd_cycles = 0;
+    static unsigned cum_cycles = 0, cum_cycles_div = 0;
+    static unsigned last_line_drawed = 0;
 
     cumulative_cycles += cycles;
 
@@ -126,7 +133,17 @@ void inc_timer(unsigned cycles)
                 io_state.stat |= 3;
                 if (!redrawed)
                 {
-                    draw_line(io_state.ly);
+                    if (io_state.ly > last_line_drawed)
+                        for (unsigned cl = last_line_drawed; cl < io_state.ly; cl++)
+                            draw_line(cl);
+                    else
+                    {
+                        for (unsigned cl = last_line_drawed; cl < 144; cl++)
+                            draw_line(cl);
+                        for (unsigned cl = 0; cl < io_state.ly; cl++)
+                            draw_line(cl);
+                    }
+                    last_line_drawed = io_state.ly;
                     redrawed = true;
                 }
             }
@@ -163,6 +180,30 @@ void inc_timer(unsigned cycles)
         else if ((io_state.stat & (1 << 3)) && hblank_start)
             io_state.int_flag |= INT_LCDC_STAT;
     }
+}
+
+void skip_until_hblank(void)
+{
+    if (!lcd_on)
+    {
+#ifdef CYCLE_STATS
+        vhalt_cycles++;
+#endif
+        update_cpu(1);
+    }
+    else
+    {
+        unsigned diff = 114 - lcd_cycles;
+#ifdef CYCLE_STATS
+        vhalt_cycles += diff;
+#endif
+        update_cpu(diff);
+    }
+}
+
+static inline int pal2rgb(int pal)
+{
+    return ((pal & 0x1F) << 19) | (((pal >> 5) & 0x1F) << 11) | ((pal >> 10) << 3);
 }
 
 uint8_t io_read(uint8_t reg)
@@ -271,39 +312,47 @@ void io_write(uint8_t reg, uint8_t val)
             io_state.bcpd = (val & 1) ? (bpalette[(val >> 1) & 0x1F] >> 8) : (bpalette[(val >> 1) & 0x1F] & 0xFF);
             break;
         case 0x69: // BGPD -- background palette data
+        {
+            size_t pi = (io_state.bcps >> 1) & 0x1F;
             io_state.bcpd = val;
             if (io_state.bcps & 1)
             {
-                bpalette[(io_state.bcps >> 1) & 0x1F] &= 0x00FF;
-                bpalette[(io_state.bcps >> 1) & 0x1F] |= (val << 8) & 0x7F00;
+                bpalette[pi] &= 0x00FF;
+                bpalette[pi] |= (val << 8) & 0x7F00;
             }
             else
             {
-                bpalette[(io_state.bcps >> 1) & 0x1F] &= 0xFF00;
-                bpalette[(io_state.bcps >> 1) & 0x1F] |= val;
+                bpalette[pi] &= 0xFF00;
+                bpalette[pi] |= val;
             }
+            ibpalette[pi] = pal2rgb(bpalette[pi]);
             if (io_state.bcps & 0x80)
                 io_write(0x68, io_state.bcps + 1);
             break;
+        }
         case 0x6A: // OBPI -- object palette index
             io_state.ocps = val & 0xBF;
             io_state.ocpd = (val & 1) ? (opalette[(val >> 1) & 0x1F] >> 8) : (opalette[(val >> 1) & 0x1F] & 0xFF);
             break;
         case 0x6B: // OBPD -- object palette data
+        {
+            size_t pi = (io_state.ocps >> 1) & 0x1F;
             io_state.ocpd = val;
             if (io_state.ocps & 1)
             {
-                opalette[(io_state.ocps >> 1) & 0x1F] &= 0x00FF;
-                opalette[(io_state.ocps >> 1) & 0x1F] |= (val << 8) & 0x7F00;
+                opalette[pi] &= 0x00FF;
+                opalette[pi] |= (val << 8) & 0x7F00;
             }
             else
             {
-                opalette[(io_state.ocps >> 1) & 0x1F] &= 0xFF00;
-                opalette[(io_state.ocps >> 1) & 0x1F] |= val;
+                opalette[pi] &= 0xFF00;
+                opalette[pi] |= val;
             }
+            iopalette[pi] = pal2rgb(opalette[pi]);
             if (io_state.ocps & 0x80)
                 io_write(0x6A, io_state.ocps + 1);
             break;
+        }
         case 0x70: // SVBK -- select WRAM bank
             val &= 7;
             if (!val)

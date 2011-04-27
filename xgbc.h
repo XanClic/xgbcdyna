@@ -19,6 +19,12 @@
 #define UNSAVE_RAM_CACHING
 #define UNSAVE_RAM_MAPPING
 
+// 1: Sicher, korrekte Implementierung.
+// 32: Unsicherer.
+// -1: (entsprechend ca. 80) Nicht mehr korrekt, bleibt aber im HBlank.
+//     (maximal sinnvolle Anzahl)
+#define HALT_CYCLES -1
+
 #define CACHE_STATS
 #define SEGV_STATS
 #define CYCLE_STATS
@@ -172,6 +178,7 @@ void io_write(uint8_t reg, uint8_t val);
 uint8_t eram_read8(unsigned off);
 void eram_write8(unsigned off, uint8_t val);
 void update_cpu(unsigned cycles);
+void skip_until_hblank(void);
 void inc_timer(unsigned cycles);
 void handle_input_events(void);
 void draw_line(unsigned line);

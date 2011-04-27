@@ -86,17 +86,24 @@ static void dynarec(exec_unit_t eu, uint16_t ip)
 
     drc = (uint8_t *)(uintptr_t)eu;
 
+#ifndef REGISTER_EQUIVALENCE
     unsigned cycle_counter = 0;
+#endif
     dr_cycle_counter = 0;
 
     dri = 0;
 
     uint8_t op, pop = 0;
 
+#ifdef REGISTER_EQUIVALENCE
+    unsigned need_regs = REG_AF | REG_BC | REG_DE | REG_HL | REG_SP, do_break = 0;
+#else
     unsigned need_regs = REG_AF, do_break = 0;
+#endif
 
     unsigned start_area = ip & 0xC000;
 
+#ifndef REGISTER_EQUIVALENCE
     while (!do_break)
     {
         op = MEM8(ip++);
@@ -146,6 +153,7 @@ static void dynarec(exec_unit_t eu, uint16_t ip)
         if ((ip & 0xC000) != start_area)
             break;
     }
+#endif
 
     if (need_regs & REG_AF)
     {
@@ -225,7 +233,9 @@ static void dynarec(exec_unit_t eu, uint16_t ip)
     vmapp1(drc, ei, 0xC3);
 
 
+#ifndef REGISTER_EQUIVALENCE
     do_break = 0;
+#endif
 
     while (!do_break)
     {
@@ -384,8 +394,10 @@ static void dynarec(exec_unit_t eu, uint16_t ip)
         }
     }
 
+#ifndef REGISTER_EQUIVALENCE
     assert(cycle_counter == dr_cycle_counter);
     assert(ip == drip);
+#endif
 
 #ifdef DUMP_BLOCKS
     printf("block 0x%04X - 0x%04X dumped.\n", ipwas, ip);

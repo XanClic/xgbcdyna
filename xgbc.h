@@ -5,32 +5,118 @@
 #include <stdint.h>
 #include <stdio.h>
 
+// Schnelle und unsichere Version, ohne Statistiken
+// #define FAST_VERSION
+// Langsamere und sichere Version, ohne Statistiken
+// #define SECURE_RELEASE_VERSION
+
+
 #define MEM_BASE 0x40000000UL
 
 // ought to be enough
 #define CODE_BUFSZ 0x1000
 #define CODE_EXITI (CODE_BUFSZ - 0x0100)
 
+// Maximale Anzahl von Zyklen, die in einem übersetzten Block ausgeführt werden
+// sollen
 #define MAX_CYCLES 32
 
+// Anzahl der Einträge pro Cache
 #define CACHES_SIZE 0x400
 
+// Flags nur aktualisieren, soweit dies sinnvoll ist -- dies betrifft vor allem
+// das AF sowie bei einigen Operationen (wie SWAP und Rotationen) das ZF.
 #define UNSAVE_FLAG_OPTIMIZATIONS
+// Auch Code cachen, der sich außerhalb des ROMs befindet -- unsicher, aber da
+// die meisten Spiele nur einen kleinen festen Code für OAM-DMA in den HRAM
+// kopieren dürften, eine wirkungsvolle Optimierung.
 #define UNSAVE_RAM_CACHING
+// Den Speicher ab 0xF000 als lesbar mappen. Normalerweise befindet sich
+// zwischen 0xF000 und 0xFDFF der gleiche Speicher wie zwischen 0xD000 und
+// 0xDDFF, mit dieser Option nicht mehr. Offiziell darf auf diese Adressen
+// (0xF000 bis 0xFDFF) sowieso nicht zugegriffen werden, deshalb sollte dies
+// nicht schaden.
 #define UNSAVE_RAM_MAPPING
+// Wenn diese Option ausgeschaltet ist, werden die Registerwerte in der VM nur
+// soweit nötig geladen und gespeichert. Bringt merkwürdigerweise aber
+// Instabilität. Mit dieser Option werden immer alle Register (AF/EAX, BC/EBX,
+// DE/ECX, HL/EDX und BP/ESP) geladen und gesichert.
+#define REGISTER_EQUIVALENCE
 
-// 1: Sicher, korrekte Implementierung.
+// Anzahl von Zyklen, die pro HALT-Schritt simuliert werden sollen.
+// 1: Sicher, korrekte Implementierung. Andererseits aber Verschwendung, da
+//    letzten Endes sowieso bis zum nächsten IRQ gewartet werden muss.
 // 32: Unsicherer.
-// -1: (entsprechend ca. 80) Nicht mehr korrekt, bleibt aber im HBlank.
-//     (maximal sinnvolle Anzahl)
+// -1: (entsprechend ca. 80, maximal sinnvolle Anzahl): Nicht mehr korrekt,
+//     geht bis zur nächsten LCD-Zeile. Dadurch sollten die IRQs immer noch zum
+//     korrekten Zeitpunkt ausgelöst werden.
 #define HALT_CYCLES -1
 
+// Gibt nach Beendigung Informationen zum DBT-Cache (Dynamic Binary Translation)
+// aus, betreffend Hits, Misses, etc.
 #define CACHE_STATS
+// Gibt nach Beendigung die Anzahl der abgefangenen Speicherzugriffsfehler aus.
 #define SEGV_STATS
+// Gibt nach Beendigung detaillierte Informationen darüber aus, wie viel Zeit
+// welcher Teil des Programms in Anspruch genommen hat.
 #define CYCLE_STATS
 
-#define likely(x)     __builtin_expect((x), 1)
-#define unlikely(x)   __builtin_expect((x), 0)
+
+#ifdef FAST_VERSION
+#ifndef UNSAVE_FLAG_OPTIMIZATIONS
+#define UNSAVE_FLAG_OPTIMIZATIONS
+#endif
+#ifndef UNSAVE_RAM_CACHING
+#define UNSAVE_RAM_CACHING
+#endif
+#ifndef UNSAVE_RAM_MAPPING
+#define UNSAVE_RAM_MAPPING
+#endif
+#ifndef REGISTER_EQUIVALENCE
+#define REGISTER_EQUIVALENCE
+#endif
+#undef HALT_CYCLES
+#define HALT_CYCLES -1
+#ifdef CACHE_STATS
+#undef CACHE_STATS
+#endif
+#ifdef SEGV_STATS
+#undef SEGV_STATS
+#endif
+#ifdef CYCLE_STATS
+#undef CYCLE_STATS
+#endif
+#endif
+
+#ifdef SECURE_RELEASE_VERSION
+#ifdef UNSAVE_FLAG_OPTIMIZATIONS
+#undef UNSAVE_FLAG_OPTIMIZATIONS
+#endif
+#ifdef UNSAVE_RAM_CACHING
+#undef UNSAVE_RAM_CACHING
+#endif
+#ifdef UNSAVE_RAM_MAPPING
+#undef UNSAVE_RAM_MAPPING
+#endif
+#ifndef REGISTER_EQUIVALENCE
+#define REGISTER_EQUIVALENCE
+#endif
+#undef HALT_CYCLES
+#define HALT_CYCLES 1
+#ifdef CACHE_STATS
+#undef CACHE_STATS
+#endif
+#ifdef SEGV_STATS
+#undef SEGV_STATS
+#endif
+#ifdef CYCLE_STATS
+#undef CYCLE_STATS
+#endif
+#endif
+
+
+#define likely(x)   __builtin_expect((x), 1)
+#define unlikely(x) __builtin_expect((x), 0)
 
 struct io
 {

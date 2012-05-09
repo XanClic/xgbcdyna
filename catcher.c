@@ -103,6 +103,20 @@ static size_t x86_execute(ucontext_t *ac)
 
     switch (i[0])
     {
+        case 0x0A:
+            switch (i[1])
+            {
+                case 0x02: // or al,[edx]
+                    v1 = ac->uc_mcontext.gregs[REG_EAX] & 0xFF;
+                    v2 = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF);
+                    ac->uc_mcontext.gregs[REG_EAX] &= ~0xFF;
+                    ac->uc_mcontext.gregs[REG_EAX] |= v1 | v2;
+                    ac->uc_mcontext.gregs[REG_EFL] &= ~0x0841; // OF, ZF, CF löschen, Rest egal
+                    // ZF setzen
+                    ac->uc_mcontext.gregs[REG_EFL] |= !(v1 | v2) << 6; // ZF
+                    return 2;
+            }
+            break;
         case 0x2A:
             switch (i[1])
             {
@@ -167,6 +181,9 @@ static size_t x86_execute(ucontext_t *ac)
                     return 2;
                 case 0x02: // mov [edx],al
                     unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, ac->uc_mcontext.gregs[REG_EAX] & 0xFF);
+                    return 2;
+                case 0x0A: // mov [edx],cl
+                    unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, ac->uc_mcontext.gregs[REG_ECX] & 0xFF);
                     return 2;
                 case 0x1A: // mov [edx],bl
                     unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, ac->uc_mcontext.gregs[REG_EBX] & 0xFF);
@@ -247,7 +264,14 @@ static size_t x86_execute(ucontext_t *ac)
                     unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, result);
                     ac->uc_mcontext.gregs[REG_EFL] &= ~0x08D4; // OF, SF, ZF, AF und PF löschen
                     // ZF und AF entsprechend setzen, SF/OF/PF brauche ich nicht
-                    ac->uc_mcontext.gregs[REG_EFL] |= (!result << 6) /* ZF */ | (!(result & 15) << 4) /* AF */;
+                    ac->uc_mcontext.gregs[REG_EFL] |= (!(result & 0xFF) << 6) /* ZF */ | (!(result & 15) << 4) /* AF */;
+                    return 2;
+                case 0x0A: // dec byte [edx]
+                    result = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF);
+                    ac->uc_mcontext.gregs[REG_EFL] &= ~0x08D4;
+                    ac->uc_mcontext.gregs[REG_EFL] |= !(result-- & 15) << 4;
+                    unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, result);
+                    ac->uc_mcontext.gregs[REG_EFL] |= !(result & 0xFF) << 6;
                     return 2;
             }
             break;

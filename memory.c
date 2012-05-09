@@ -257,6 +257,55 @@ static void mbc3_rom_write(unsigned off, uint8_t val)
     }
 }
 
+static void mbc1_rom_write(unsigned off, uint8_t val)
+{
+    static int mode = 0;
+
+    switch (off & 0x6000)
+    {
+        case 0x0000:
+            if (!val)
+            {
+                unselect_ram();
+                ram_enabled = false;
+            }
+            else if (likely(val == 0x0A))
+            {
+                ram_enabled = true;
+                if (!ram_mapped)
+                    mem_select_ram_bank(cramb);
+            }
+            break;
+        case 0x2000:
+            cromb = val & 0x1F;
+            if (!cromb)
+                cromb = 1;
+            mem_select_rom_bank(cromb);
+            change_banked_rom(cromb);
+            break;
+        case 0x4000:
+            if (mode)
+            {
+                if ((val & 0x03) != cramb)
+                {
+                    cramb = val & 0x03;
+                    if (ram_enabled && !ram_mapped)
+                        mem_select_ram_bank(cramb);
+                }
+            }
+            else
+            {
+                cromb = (cromb & 0x1F) | ((val & 0x03) << 5);
+                mem_select_rom_bank(cromb);
+                change_banked_rom(cromb);
+            }
+            break;
+        case 0x6000:
+            mode = val & 1;
+            break;
+    }
+}
+
 static void mbc3_ram_write(unsigned off, uint8_t val)
 {
     if (unlikely(cramb < 8) || unlikely(cramb > 12))
@@ -303,6 +352,7 @@ static uint8_t mbc3_ram_read(unsigned off)
 }
 
 static void (*const rom_write[6])(unsigned off, uint8_t val) = {
+    [1] = &mbc1_rom_write,
     [3] = &mbc3_rom_write
 };
 

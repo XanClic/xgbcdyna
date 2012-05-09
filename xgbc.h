@@ -29,17 +29,17 @@
 
 // Flags nur aktualisieren, soweit dies sinnvoll ist -- dies betrifft vor allem
 // das AF sowie bei einigen Operationen (wie SWAP und Rotationen) das ZF.
-#define UNSAVE_FLAG_OPTIMIZATIONS
+// #define UNSAVE_FLAG_OPTIMIZATIONS
 // Auch Code cachen, der sich außerhalb des ROMs befindet -- unsicher, aber da
 // die meisten Spiele nur einen kleinen festen Code für OAM-DMA in den HRAM
 // kopieren dürften, eine wirkungsvolle Optimierung.
-#define UNSAVE_RAM_CACHING
+// #define UNSAVE_RAM_CACHING
 // Den Speicher ab 0xF000 als lesbar mappen. Normalerweise befindet sich
 // zwischen 0xF000 und 0xFDFF der gleiche Speicher wie zwischen 0xD000 und
 // 0xDDFF, mit dieser Option nicht mehr. Offiziell darf auf diese Adressen
 // (0xF000 bis 0xFDFF) sowieso nicht zugegriffen werden, deshalb sollte dies
 // nicht schaden.
-#define UNSAVE_RAM_MAPPING
+// #define UNSAVE_RAM_MAPPING
 // Wenn diese Option ausgeschaltet ist, werden die Registerwerte in der VM nur
 // soweit nötig geladen und gespeichert. Bringt merkwürdigerweise aber
 // Instabilität. Mit dieser Option werden immer alle Register (AF/EAX, BC/EBX,
@@ -53,7 +53,7 @@
 // -1: (entsprechend ca. 80, maximal sinnvolle Anzahl): Nicht mehr korrekt,
 //     geht bis zur nächsten LCD-Zeile. Dadurch sollten die IRQs immer noch zum
 //     korrekten Zeitpunkt ausgelöst werden.
-#define HALT_CYCLES -1
+#define HALT_CYCLES 1
 
 // Gibt nach Beendigung Informationen zum DBT-Cache (Dynamic Binary Translation)
 // aus, betreffend Hits, Misses, etc.

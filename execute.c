@@ -571,7 +571,9 @@ void begin_execution(void)
     {
         base_rom[e].code   = (exec_unit_t)(full_cache + 0 * CACHES_SIZE * CODE_BUFSZ);
         banked_rom[e].code = (exec_unit_t)(full_cache + 1 * CACHES_SIZE * CODE_BUFSZ);
+#ifdef UNSAVE_RAM_CACHING
         ram_cache[e].code  = (exec_unit_t)(full_cache + 2 * CACHES_SIZE * CODE_BUFSZ);
+#endif
         full_cache += CODE_BUFSZ;
     }
 

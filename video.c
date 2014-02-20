@@ -8,10 +8,13 @@
 
 #include "xgbc.h"
 
+#define FRAME_DROP 400
+
 static SDL_Surface *screen, *vscreen;
 
 extern struct io io_state;
 extern bool has_cgb, lcd_on;
+extern bool is_random;
 
 extern uint8_t *full_vidram, *oam;
 
@@ -153,10 +156,16 @@ static void draw_bg_line(unsigned line, unsigned bit7val, unsigned window)
 
 void draw_line(unsigned line)
 {
-    if (!lcd_on)
+    static int frame_drop_counter;
+
+    if (!lcd_on || (is_random && frame_drop_counter))
     {
         if (line == 143)
+        {
             handle_input_events();
+            frame_drop_counter = (frame_drop_counter + 1) % FRAME_DROP;
+        }
+
         return;
     }
 
@@ -318,6 +327,7 @@ void draw_line(unsigned line)
     if (line == 143)
     {
         handle_input_events();
+        frame_drop_counter = (frame_drop_counter + 1) % FRAME_DROP;
 
         SDL_BlitSurface(vscreen, NULL, screen, NULL);
         SDL_UpdateRect(screen, 0, 0, 0, 0);

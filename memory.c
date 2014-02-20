@@ -278,8 +278,6 @@ static void mbc1_rom_write(unsigned off, uint8_t val)
             break;
         case 0x2000:
             cromb = val & 0x1F;
-            if (!cromb)
-                cromb = 1;
             mem_select_rom_bank(cromb);
             change_banked_rom(cromb);
             break;
@@ -320,7 +318,9 @@ static void mbc3_ram_write(unsigned off, uint8_t val)
         return;
     }
 
+#if 0
     fprintf(stderr, "[mbc3] Ignoriere geschriebenen Zeitwert 0x%02X ins Register %i.\n", val, cramb);
+#endif
 }
 
 static uint8_t mbc3_ram_read(unsigned off)
@@ -351,9 +351,53 @@ static uint8_t mbc3_ram_read(unsigned off)
     }
 }
 
+static void mbc5_rom_write(unsigned off, uint8_t val)
+{
+    switch (off & 0x6000)
+    {
+        case 0x0000:
+            if (!val)
+            {
+                unselect_ram();
+                ram_enabled = false;
+            }
+            else if (likely(val == 0x0A))
+            {
+                ram_enabled = true;
+                if (!ram_mapped)
+                    mem_select_ram_bank(cramb);
+            }
+            break;
+
+        case 0x2000:
+            cromb = (off & 0x1000)
+                  ? (cromb & 0x0FF) | ((val & 1) << 8)
+                  : (cromb & 0x100) | val;
+
+            mem_select_rom_bank(cromb);
+            change_banked_rom(cromb);
+            break;
+
+        case 0x4000:
+            cramb = val & 0xF;
+            if (ram_enabled)
+                mem_select_ram_bank(cramb);
+            else
+                unselect_ram();
+            break;
+
+#if 0
+        default:
+            fprintf(stderr, "[mbc5] Fehlgeschlagener ROM-Schreibzugriff 0x%02X auf 0x%04X.\n", val, off);
+            exit(1);
+#endif
+    }
+}
+
 static void (*const rom_write[6])(unsigned off, uint8_t val) = {
     [1] = &mbc1_rom_write,
-    [3] = &mbc3_rom_write
+    [3] = &mbc3_rom_write,
+    [5] = &mbc5_rom_write
 };
 
 static uint8_t (*const ram_read[6])(unsigned off) = {

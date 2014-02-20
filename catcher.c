@@ -66,6 +66,11 @@ static uint8_t unsafe_mem_read8(uint16_t addr)
         return eram_read8(addr - 0xA000);
 }
 
+static uint16_t unsafe_mem_read16(uint16_t addr)
+{
+    return unsafe_mem_read8(addr) | ((uint16_t)unsafe_mem_read8(addr + 1) << 8);
+}
+
 // Schreibt in anscheinend ungemappten oder RO-Speicher
 static void unsafe_mem_write8(uint16_t addr, uint8_t val)
 {
@@ -99,7 +104,8 @@ static void unsafe_mem_write16(uint16_t addr, uint16_t val)
 static size_t x86_execute(ucontext_t *ac)
 {
     uint8_t *i = (uint8_t *)ac->uc_mcontext.gregs[REG_EIP];
-    uint8_t result, v1, v2;
+    uint8_t result, v1, v2, cf;
+    uint16_t result16;
 
     switch (i[0])
     {
@@ -114,6 +120,22 @@ static size_t x86_execute(ucontext_t *ac)
                     ac->uc_mcontext.gregs[REG_EFL] &= ~0x0841; // OF, ZF, CF löschen, Rest egal
                     // ZF setzen
                     ac->uc_mcontext.gregs[REG_EFL] |= !(v1 | v2) << 6; // ZF
+                    return 2;
+            }
+            break;
+        case 0x1A:
+            switch (i[1])
+            {
+                case 0x02: // sbb al,[edx]
+                    v1 = ac->uc_mcontext.gregs[REG_EAX] & 0xFF;
+                    v2 = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF);
+                    cf = ac->uc_mcontext.gregs[REG_EFL] & 1;
+                    result = v1 - v2 - cf;
+                    ac->uc_mcontext.gregs[REG_EAX] &= ~0xFF;
+                    ac->uc_mcontext.gregs[REG_EAX] |= result;
+                    ac->uc_mcontext.gregs[REG_EFL] &= ~0x08D5; // OF, SF, ZF, AF, PF und CF löschen
+                    // ZF, CF AF setzen, den Rest brauche ich nicht
+                    ac->uc_mcontext.gregs[REG_EFL] |= (!result << 6) /* ZF */ | (v2 > v1) /* CF */ | (((v1 & 0xF) < ((v2 + cf) & 0xF)) << 4) /* AF */;
                     return 2;
             }
             break;
@@ -153,23 +175,46 @@ static size_t x86_execute(ucontext_t *ac)
                             unsafe_mem_write16(*(uint16_t *)(i + 3), ac->uc_mcontext.gregs[REG_EBP] & 0xFFFF);
                             return 7;
                     }
+                    break;
+                case 0x8B:
+                    switch (i[2])
+                    {
+                        case 0x45: //  mov ax,[ebp+nn]
+                            ac->uc_mcontext.gregs[REG_EAX] &= ~0xFFFF;
+                            ac->uc_mcontext.gregs[REG_EAX] |= unsafe_mem_read16((ac->uc_mcontext.gregs[REG_EBP] + i[3]) & 0xFFFF);
+                            return 4;
+                    }
+                    break;
+                case 0xC7:
+                    switch (i[2])
+                    {
+                        case 0x45: // mov word [ebp+nn],nnnn
+                            unsafe_mem_write16((ac->uc_mcontext.gregs[REG_EBP] + i[3]) & 0xFFFF, *(uint16_t *)(i + 4));
+                            return 6;
+                    }
+                    break;
             }
             break;
         case 0x80:
             switch (i[1])
             {
-                case 0x22: // and byte [edx],n
+                case 0x22: // and byte [edx],nn
                     result = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF) & i[2];
                     unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, result);
                     ac->uc_mcontext.gregs[REG_EFL] &= ~0x08C5; // OF, SF, ZF, PF und CF löschen
                     // ZF entsprechend setzen, SF/PF brauche ich nicht
                     ac->uc_mcontext.gregs[REG_EFL] |= !result << 6;
                     return 3;
-                case 0x0A: // or byte [edx],n
+                case 0x0A: // or byte [edx],nn
                     result = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF) | i[2];
                     unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, result);
                     ac->uc_mcontext.gregs[REG_EFL] &= ~0x08C5;
                     ac->uc_mcontext.gregs[REG_EFL] |= !result << 6;
+                    return 3;
+                case 0x3A: // cmp byte [edx],nn
+                    result16 = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF) - i[2];
+                    ac->uc_mcontext.gregs[REG_EFL] &= ~0x08C5;
+                    ac->uc_mcontext.gregs[REG_EFL] |= (result16 & 0x80) | (!(result16 & 0xFF) << 6) | !!(result16 & ~0xFF);
                     return 3;
             }
             break;
@@ -181,6 +226,9 @@ static size_t x86_execute(ucontext_t *ac)
                     return 2;
                 case 0x02: // mov [edx],al
                     unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, ac->uc_mcontext.gregs[REG_EAX] & 0xFF);
+                    return 2;
+                case 0x03: // mov [ebx],al
+                    unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EBX] & 0xFFFF, ac->uc_mcontext.gregs[REG_EAX] & 0xFF);
                     return 2;
                 case 0x0A: // mov [edx],cl
                     unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, ac->uc_mcontext.gregs[REG_ECX] & 0xFF);
@@ -207,6 +255,22 @@ static size_t x86_execute(ucontext_t *ac)
                     ac->uc_mcontext.gregs[REG_EAX] &= ~0xFF;
                     ac->uc_mcontext.gregs[REG_EAX] |= unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF);
                     return 2;
+                case 0x03: // mov al,[ebx]
+                    ac->uc_mcontext.gregs[REG_EAX] &= ~0xFF;
+                    ac->uc_mcontext.gregs[REG_EAX] |= unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EBX] & 0xFFFF);
+                    return 2;
+                case 0x11: // mov dl,[ecx]
+                    ac->uc_mcontext.gregs[REG_EDX] &= ~0xFF;
+                    ac->uc_mcontext.gregs[REG_EDX] |= unsafe_mem_read8(ac->uc_mcontext.gregs[REG_ECX] & 0xFFFF);
+                    return 2;
+                case 0x12: // mov dl,[edx]
+                    ac->uc_mcontext.gregs[REG_EDX] &= ~0xFF;
+                    ac->uc_mcontext.gregs[REG_EDX] |= unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF);
+                    return 2;
+                case 0x13: // mov dl,[ebx]
+                    ac->uc_mcontext.gregs[REG_EDX] &= ~0xFF;
+                    ac->uc_mcontext.gregs[REG_EDX] |= unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EBX] & 0xFFFF);
+                    return 2;
             }
             break;
         case 0xA0: // mov al,[nnnn]
@@ -227,9 +291,18 @@ static size_t x86_execute(ucontext_t *ac)
         case 0xD0:
             switch (i[1])
             {
-                case 0x1A: // rcr byte [edx],1
+                case 0x0A: // ror byte [edx],1
                     v1 = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF);
                     result = (uint8_t)(v1 >> 1) | (uint8_t)(v1 << 7);
+                    unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, result);
+                    ac->uc_mcontext.gregs[REG_EFL] &= ~0xC5; // SF, ZF, PF und CF löschen
+                    // ZF und CF entsprechend setzen, SF/PF brauche ich nicht
+                    // Hinweis: Auf x86 wird ZF eigentlich nicht beeinflusst, aber da dies garantiert ein VM-Befehl ist, kann es nicht schaden
+                    ac->uc_mcontext.gregs[REG_EFL] |= (!result << 6) | (v1 & 1);
+                    return 2;
+                case 0x1A: // rcr byte [edx],1
+                    v1 = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF);
+                    result = (uint8_t)(v1 >> 1) | (uint8_t)(ac->uc_mcontext.gregs[REG_EFL] << 7); // kein Kommentar egal lol euer clici
                     unsafe_mem_write8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF, result);
                     ac->uc_mcontext.gregs[REG_EFL] &= ~0xC5; // SF, ZF, PF und CF löschen
                     // ZF und CF entsprechend setzen, SF/PF brauche ich nicht

@@ -28,7 +28,7 @@ extern unsigned segfaults;
 #endif
 #ifdef CYCLE_STATS
 uintmax_t dyna_cycles = 0, update_cycles = 0, exec_cycles = 0, evade_cycles = 0, halt_cycles = 0;
-unsigned vhalt_cycles = 0;
+unsigned long long vhalt_cycles = 0;
 #endif
 
 extern const uint8_t flag_table[256], reverse_flag_table[256];
@@ -276,6 +276,10 @@ static void dynarec(exec_unit_t eu, uint16_t ip)
                     {
                         drvmapp4(dynarec_const[op]);
                     }
+                    else if (likely(dynarec_const_length[op] == (1 | DYNAREC_CNST)))
+                    {
+                        drvmapp1(dynarec_const[op]);
+                    }
                     else
                     {
                         printf("%04X: Unbekannter Opcode %02X\n", drip - 1, op);
@@ -458,7 +462,7 @@ void change_banked_rom(unsigned new_bank)
     current_rom_bank = new_bank;
 }
 
-extern unsigned cumulative_cycles;
+extern unsigned long long cumulative_cycles;
 
 static struct timeval stp;
 
@@ -472,7 +476,7 @@ static void print_cum_cycles(int status, void *arg)
 
     printf("=== xgbcdyna beendet ===\n");
 
-    printf("%i vierfache CPU-Zyklen ausgeführt (%g s).\n", cumulative_cycles, (double)cumulative_cycles / 1048576.);
+    printf("%llu vierfache CPU-Zyklen ausgeführt (%g s).\n", cumulative_cycles, (double)cumulative_cycles / 1048576.);
 
     uintmax_t start = stp.tv_sec * 1000000ULL + stp.tv_usec;
     uintmax_t end = etp.tv_sec * 1000000ULL + etp.tv_usec;
@@ -510,7 +514,7 @@ static void print_cum_cycles(int status, void *arg)
     printf("%g s nicht erfasst.\n\n", (double)(end - start) / 1000000. - time_sum);
 
     printf("%lli Zyklen (%g s, %g %%) im HALT, ", halt_cycles, (double)halt_cycles / tscres, (double)halt_cycles * 100. / cycsum);
-    printf("virtuelle CPU-Auslastung: %u von %u Zyklen (%g %%).\n\n", cumulative_cycles - vhalt_cycles, cumulative_cycles, (double)(cumulative_cycles - vhalt_cycles) * 100. / (double)cumulative_cycles);
+    printf("virtuelle CPU-Auslastung: %llu von %llu Zyklen (%g %%).\n\n", cumulative_cycles - vhalt_cycles, cumulative_cycles, (double)(cumulative_cycles - vhalt_cycles) * 100. / (double)cumulative_cycles);
 #endif
 
 

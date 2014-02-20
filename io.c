@@ -6,10 +6,10 @@
 
 #include "xgbc.h"
 
-unsigned cumulative_cycles = 0;
+unsigned long long cumulative_cycles = 0;
 
 #ifdef CYCLE_STATS
-extern unsigned vhalt_cycles;
+extern unsigned long long vhalt_cycles;
 #endif
 
 extern uint8_t *oam, *full_vidram;

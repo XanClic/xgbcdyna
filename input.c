@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <time.h>
 
 #include <SDL.h>
 
@@ -8,6 +9,7 @@ extern struct io io_state;
 
 static unsigned keys_were = 0;
 uint8_t keystates = 0;
+bool is_random = false;
 
 static void update_keyboard(void)
 {
@@ -33,6 +35,37 @@ static void update_keyboard(void)
         io_state.int_flag |= INT_P10_P13;
 
     keys_were = keystates;
+}
+
+static const int random_keys[] = {
+    VK_A, VK_A, VK_A, VK_A, VK_A,
+    VK_B, VK_B, VK_B,
+    VK_START,
+    VK_LEFT, VK_LEFT,
+    VK_RIGHT, VK_RIGHT,
+    VK_DOWN, VK_DOWN,
+    VK_UP, VK_UP
+};
+
+/*
+unsigned random_key(void)
+{
+    return random_keys[rand() % (sizeof(random_keys) / sizeof(random_keys[0]))];
+}
+*/
+
+unsigned random_key(void)
+{
+    static unsigned current_key;
+    static unsigned current_key_rem_frames;
+
+    if (!current_key_rem_frames--)
+    {
+        current_key = !(rand() % 4) ? 0 : random_keys[rand() % (sizeof(random_keys) / sizeof(random_keys[0]))];
+        current_key_rem_frames = rand() % 75;
+    }
+
+    return current_key;
 }
 
 void handle_input_events(void)
@@ -103,9 +136,17 @@ void handle_input_events(void)
                     case SDLK_DOWN:
                         new_keystate &= ~VK_DOWN;
                         break;
+                    case SDLK_r:
+                        is_random = !is_random;
+                        srand(time(NULL));
+                        new_keystate = 0;
+                        break;
                 }
         }
     }
+
+    if (is_random)
+        new_keystate = random_key();
 
     if (new_keystate != keystates)
     {

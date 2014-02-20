@@ -1,4 +1,4 @@
-#define DYNAREC_LOAD 1
+#define DYNAREC_LOAD 8
 #define DYNAREC_CNST 0
 
 #define drop(n) static void _dynarec_##n(void)
@@ -841,6 +841,7 @@ static const size_t dynarec_const_length[256] = {
     [0x24] = 2 | DYNAREC_CNST,
     [0x25] = 2 | DYNAREC_CNST,
     [0x26] = 2 | DYNAREC_LOAD,
+    [0x27] = 1 | DYNAREC_CNST,
     [0x2B] = 4 | DYNAREC_CNST,
     [0x2C] = 2 | DYNAREC_CNST,
     [0x2D] = 2 | DYNAREC_CNST,
@@ -1044,6 +1045,7 @@ static const uint_fast32_t dynarec_const[256] = {
     [0x24] = 0xC6FE,        // inc h = inc dh
     [0x25] = 0xCEFE,        // dec h = dec dh
     [0x26] = 0x00B6,        // ld h,n = mov dh,n
+    [0x27] = 0x27,          // daa (roflol)
     [0x2B] = 0x9E4A669F,    // dec hl = lahf; dec dx; sahf
     [0x2C] = 0xC2FE,        // inc l = inc dl
     [0x2D] = 0xCAFE,        // dec l = dec dl

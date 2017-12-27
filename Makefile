@@ -4,7 +4,7 @@ LD = gcc
 CC = gcc
 MLIBS = `sdl-config --libs` -lrt $(LIBS)
 MLDFLAGS = -m32 -L/usr/lib32 $(LDFLAGS) $(PROF)
-MCFLAGS = -std=c1x -O3 -Wall -Wextra -pedantic -g2 -m32 -march=native -mtune=native `sdl-config --cflags` $(CFLAGS) $(PROF)
+MCFLAGS = -std=c11 -O3 -Wall -Wextra -pedantic -g2 -m32 -march=native -mtune=native `sdl-config --cflags` $(CFLAGS) $(PROF)
 RM = rm -rf
 
 .PHONY: all clean

@@ -5,17 +5,21 @@
 #define dran(o, n) [o] = &_dynarec_##n
 
 static uint8_t *drc;
-static size_t dri;
-static uint16_t drip;
+static size_t dri; // Instruction position in x86 stream?
+static uint16_t drip; // Instruction position in Z80 stream?
 static unsigned dr_cycle_counter;
 
 #define drvmapp1(v) vmapp1(drc, dri, v)
 #define drvmapp2(v) vmapp2(drc, dri, v)
 #define drvmapp4(v) vmapp4(drc, dri, v)
 
-drop(nop)
-{
-}
+#define drvmappn(...) vmappn(drc, &dri, __VA_ARGS__, sizeof(__VA_ARGS__))
+
+#define JUMP_DISTANCE_START() \
+    size_t _start_dri = dri
+
+#define ASSERT_JUMP_DISTANCE(dist) \
+    assert(_start_dri + dist == dri)
 
 drop(jr_n)
 {
@@ -24,196 +28,71 @@ drop(jr_n)
 
 drop(jrnz_n)
 {
-    // jz byte +0x15
-    drvmapp2(0x1574);
+    JUMP_DISTANCE_START();
+    drvmappn(@@asm("jz $+0x17"));
     exit_vm(drc, &dri, drip + (int8_t)MEM8(drip) + 1, dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x17);
     drip++;
 }
 
 drop(jrz_n)
 {
-    // jnz byte +0x15
-    drvmapp2(0x1575);
+    JUMP_DISTANCE_START();
+    drvmappn(@@asm("jnz $+0x17"));
     exit_vm(drc, &dri, drip + (int8_t)MEM8(drip) + 1, dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x17);
     drip++;
 }
 
 drop(jrnc_n)
 {
-    // jc byte +0x15
-    drvmapp2(0x1572);
+    JUMP_DISTANCE_START();
+    drvmappn(@@asm("jc $+0x17"));
     exit_vm(drc, &dri, drip + (int8_t)MEM8(drip) + 1, dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x17);
     drip++;
 }
 
 drop(jrc_n)
 {
-    // jnc byte +0x15
-    drvmapp2(0x1573);
+    JUMP_DISTANCE_START();
+    drvmappn(@@asm("jnc $+0x17"));
     exit_vm(drc, &dri, drip + (int8_t)MEM8(drip) + 1, dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x17);
     drip++;
 }
 
 drop(retnz)
 {
-    // jz byte +0x1E
-    drvmapp2(0x1E74);
+    JUMP_DISTANCE_START();
+    drvmappn(@@asm("jz $+0x20"));
     exit_vm_by_ret(drc, &dri, dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x20);
 }
 
 drop(retz)
 {
-    // jnz byte +0x1E
-    drvmapp2(0x1E75);
+    JUMP_DISTANCE_START();
+    drvmappn(@@asm("jnz $+0x20"));
     exit_vm_by_ret(drc, &dri, dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x20);
 }
 
 drop(retnc)
 {
-    // jc byte +0x1E
-    drvmapp2(0x1E72);
+    JUMP_DISTANCE_START();
+    drvmappn(@@asm("jc $+0x20"));
     exit_vm_by_ret(drc, &dri, dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x20);
 }
 
 drop(retc)
 {
-    // jnc byte +0x1E
-    drvmapp2(0x1E73);
+    JUMP_DISTANCE_START();
+    drvmappn(@@asm("jnc $+0x20"));
     exit_vm_by_ret(drc, &dri, dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x20);
 }
-
-drop(ldi__hl_a)
-{
-    // mov [edx],al
-    drvmapp2(0x0288);
-    // lahf; inc dx; sahf
-    drvmapp4(0x9E42669F);
-}
-
-drop(ldi_a__hl)
-{
-    // mov al,[edx]
-    drvmapp2(0x028A);
-    // lahf; inc dx; sahf
-    drvmapp4(0x9E42669F);
-}
-
-drop(ldd__hl_a)
-{
-    // mov [edx],al
-    drvmapp2(0x0288);
-    // lahf; dec dx; sahf
-    drvmapp4(0x9E4A669F);
-}
-
-drop(ldd_a__hl)
-{
-    // mov al,[edx]
-    drvmapp2(0x028A);
-    // lahf; dec dx; sahf
-    drvmapp4(0x9E4A669F);
-}
-
-drop(ld__hl_nn)
-{
-    // mov byte [edx],nn
-    drvmapp2(0x02C6);
-    drvmapp1(MEM8(drip++));
-}
-
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-drop(and_a_n)
-{
-    // and al,n
-    drvmapp1(0x24);
-    drvmapp1(MEM8(drip++));
-    // lahf; and ah,0x6A (ZF)
-    drvmapp4(0x6AE4809F);
-    // or ah,0x10 (AF); sahf
-    drvmapp4(0x9E10CC80);
-}
-
-#define def_drop_and_a_r(r, and) \
-    drop(and_a_##r) \
-    { \
-        /* and al,r */ \
-        drvmapp2(and); \
-        /* lahf; and ah,0x6A (ZF) */ \
-        drvmapp4(0x6AE4809F); \
-        /* or ah,0x10 (AF); sahf */ \
-        drvmapp4(0x9E10CC80); \
-    }
-
-def_drop_and_a_r(b, 0xF820) // and al,bh
-def_drop_and_a_r(c, 0xD820) // and al,bl
-def_drop_and_a_r(d, 0xE820) // and al,ch
-def_drop_and_a_r(e, 0xC820) // and al,cl
-def_drop_and_a_r(h, 0xF020) // and al,dh
-def_drop_and_a_r(l, 0xD020) // and al,dl
-def_drop_and_a_r(_hl, 0x0222) // and al,[edx]
-def_drop_and_a_r(a, 0xC020) // and al,al
-
-drop(xor_a_n)
-{
-    // xor al,n
-    drvmapp1(0x34);
-    drvmapp1(MEM8(drip++));
-    // lahf
-    drvmapp1(0x9F);
-    // and ah,0x6A (ZF); sahf
-    drvmapp4(0x9E6AE480);
-}
-
-#define def_drop_xor_a_r(r, xor) \
-    drop(xor_a_##r) \
-    { \
-        drvmapp2(xor); \
-        /* lahf */ \
-        drvmapp1(0x9F); \
-        /* and ah,0x6A (ZF); sahf */ \
-        drvmapp4(0x9E6AE480); \
-    }
-
-def_drop_xor_a_r(b, 0xF830) // xor al,bh
-def_drop_xor_a_r(c, 0xD830) // xor al,bl
-def_drop_xor_a_r(d, 0xE830) // xor al,ch
-def_drop_xor_a_r(e, 0xC830) // xor al,cl
-def_drop_xor_a_r(h, 0xF030) // xor al,dh
-def_drop_xor_a_r(l, 0xD030) // xor al,dl
-def_drop_xor_a_r(_hl, 0x0232) // xor al,[edx]
-def_drop_xor_a_r(a, 0xC030) // xor al,al
-
-drop(or_a_n)
-{
-    // or al,n
-    drvmapp1(0x0C);
-    drvmapp1(MEM8(drip++));
-    // lahf; and ah,0x6A (ZF)
-    drvmapp4(0x6AE4809F);
-    // sahf
-    drvmapp1(0x9E);
-}
-
-#define def_drop_or_a_r(r, or) \
-    drop(or_a_##r) \
-    { \
-        /* or al,r */ \
-        drvmapp2(or); \
-        /* lahf */ \
-        drvmapp1(0x9F); \
-        /* and ah,0x6A (ZF); sahf */ \
-        drvmapp4(0x9E6AE480); \
-    } \
-
-def_drop_or_a_r(b, 0xF808) // or al,bh
-def_drop_or_a_r(c, 0xD808) // or al,bl
-def_drop_or_a_r(d, 0xE808) // or al,ch
-def_drop_or_a_r(e, 0xC808) // or al,cl
-def_drop_or_a_r(h, 0xF008) // or al,dh
-def_drop_or_a_r(l, 0xD008) // or al,dl
-def_drop_or_a_r(_hl, 0x020A) // or al,[edx]
-def_drop_or_a_r(a, 0xC008) // or al,al
-#endif
 
 drop(jp_nn)
 {
@@ -222,33 +101,37 @@ drop(jp_nn)
 
 drop(jpnz_nn)
 {
-    // jz byte +0x15
-    drvmapp2(0x1574);
+    JUMP_DISTANCE_START();
+    drvmappn(@@asm("jz $+0x17"));
     exit_vm(drc, &dri, MEM16(drip), dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x17);
     drip += 2;
 }
 
 drop(jpz_nn)
 {
-    // jnz byte +0x15
-    drvmapp2(0x1575);
+    JUMP_DISTANCE_START();
+    drvmappn(@@asm("jnz $+0x17"));
     exit_vm(drc, &dri, MEM16(drip), dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x17);
     drip += 2;
 }
 
 drop(jpnc_nn)
 {
-    // jc byte +0x15
-    drvmapp2(0x1572);
+    JUMP_DISTANCE_START();
+    drvmappn(@@asm("jc $+0x17"));
     exit_vm(drc, &dri, MEM16(drip), dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x17);
     drip += 2;
 }
 
 drop(jpc_nn)
 {
-    // jnc byte +0x15
-    drvmapp2(0x1573);
+    JUMP_DISTANCE_START();
+    drvmappn(@@asm("jnc $+0x17"));
     exit_vm(drc, &dri, MEM16(drip), dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x17);
     drip += 2;
 }
 
@@ -259,90 +142,75 @@ drop(ret)
 
 drop(reti)
 {
-    // mov byte [ime],1
-    drvmapp2(0x05C6);
-    drvmapp4((uintptr_t)&ime);
-    drvmapp1(0x01);
+    drvmappn(@@asm("mov byte [0x12345678],1", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&ime"));
     // Und dann ein normales RET
     exit_vm_by_ret(drc, &dri, dr_cycle_counter);
 }
 
 drop(call_nn)
 {
-    // lahf; sub bp,2
-    drvmapp4(0xED83669F);
-    // ...; sahf; mov word [ebp],drip+2
-    drvmapp4(0xC7669E02);
-    drvmapp2(0x0045);
-    drvmapp2(drip + 2);
+    drvmappn((uint8_t[]){
+                 @@asmr("lahf \n sub bp,2 \n sahf"),
+                 @@asmr("mov word [ebp],0x1234", [0x34, 0x12], "drip + 2")
+             });
     drip = MEM16(drip);
 }
 
 drop(callnz_nn)
 {
-    // jz byte +0x21
-    drvmapp2(0x2174);
-    // lahf; sub bp,2
-    drvmapp4(0xED83669F);
-    // ...; sahf; mov word [ebp],drip+2
-    drvmapp4(0xC7669E02);
-    drvmapp2(0x0045);
-    drvmapp2(drip + 2);
+    JUMP_DISTANCE_START();
+    drvmappn((uint8_t[]){
+                 @@asmr("jz $+0x23 \n lahf \n sub bp,2 \n sahf"),
+                 @@asmr("mov word [ebp],0x1234", [0x34, 0x12], "drip + 2")
+             });
     exit_vm(drc, &dri, MEM16(drip), dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x23);
     drip += 2;
 }
 
 drop(callz_nn)
 {
-    // jnz byte +0x21
-    drvmapp2(0x2175);
-    // lahf; sub bp,2
-    drvmapp4(0xED83669F);
-    // ...; sahf; mov word [ebp],drip+2
-    drvmapp4(0xC7669E02);
-    drvmapp2(0x0045);
-    drvmapp2(drip + 2);
+    JUMP_DISTANCE_START();
+    drvmappn((uint8_t[]){
+                 @@asmr("jnz $+0x23 \n lahf \n sub bp,2 \n sahf"),
+                 @@asmr("mov word [ebp],0x1234", [0x34, 0x12], "drip + 2")
+             });
     exit_vm(drc, &dri, MEM16(drip), dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x23);
     drip += 2;
 }
 
 drop(callnc_nn)
 {
-    // jc byte +0x21
-    drvmapp2(0x2172);
-    // lahf; sub bp,2
-    drvmapp4(0xED83669F);
-    // ...; sahf; mov word [ebp],drip+2
-    drvmapp4(0xC7669E02);
-    drvmapp2(0x0045);
-    drvmapp2(drip + 2);
+    JUMP_DISTANCE_START();
+    drvmappn((uint8_t[]){
+                 @@asmr("jc $+0x23 \n lahf \n sub bp,2 \n sahf"),
+                 @@asmr("mov word [ebp],0x1234", [0x34, 0x12], "drip + 2")
+             });
     exit_vm(drc, &dri, MEM16(drip), dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x23);
     drip += 2;
 }
 
 drop(callc_nn)
 {
-    // jnc byte +0x21
-    drvmapp2(0x2173);
-    // lahf; sub bp,2
-    drvmapp4(0xED83669F);
-    // ...; sahf; mov word [ebp],drip+2
-    drvmapp4(0xC7669E02);
-    drvmapp2(0x0045);
-    drvmapp2(drip + 2);
+    JUMP_DISTANCE_START();
+    drvmappn((uint8_t[]){
+                 @@asmr("jnc $+0x23 \n lahf \n sub bp,2 \n sahf"),
+                 @@asmr("mov word [ebp],0x1234", [0x34, 0x12], "drip + 2")
+             });
     exit_vm(drc, &dri, MEM16(drip), dr_cycle_counter);
+    ASSERT_JUMP_DISTANCE(0x23);
     drip += 2;
 }
 
 #define def_drop_rst(num) \
     drop(rst_##num) \
     { \
-        /* lahf; sub bp,2 */ \
-        drvmapp4(0xED83669F); \
-        /* ...; sahf; mov word [ebp],drip */ \
-        drvmapp4(0xC7669E02); \
-        drvmapp2(0x0045); \
-        drvmapp2(drip); \
+        drvmappn((uint8_t[]){ \
+                     @@asmr("lahf \n sub bp,2 \n sahf"), \
+                     @@asmr("mov word [ebp],0x1234", [0x34, 0x12], "drip") \
+                 }); \
         drip = num; \
     }
 
@@ -367,385 +235,95 @@ drop(leave_vm_imm_op1)
 
 drop(ld__nn_a)
 {
-    // mov byte [MEM_BASE+nn],al
-    drvmapp1(0xA2);
-    drvmapp4(MEM_BASE + MEM16(drip));
+    drvmappn(@@asm("mov [0x12345678],al", [0x78, 0x56, 0x34, 0x12], "MEM_BASE + MEM16(drip)"));
     drip += 2;
 }
 
 drop(pop_af)
 {
-    // movzx eax,byte [ebp]
-    drvmapp4(0x0045B60F);
-    // mov ah,[reverse_flag_table+eax]
-    drvmapp2(0xA08A);
-    drvmapp4((uintptr_t)&reverse_flag_table);
-    // mov al,[ebp+1]; add bp,2
-    drvmapp4(0x6601458A);
-    // ...; or eax,MEM_BASE
-    drvmapp4(0x0D02C583);
-    drvmapp4(MEM_BASE);
-    // sahf
-    drvmapp1(0x9E);
-}
-
-drop(pop_bc)
-{
-    // mov bx,[ebp]
-    drvmapp4(0x005D8B66);
-    // lahf; add bp,2
-    drvmapp4(0xC583669F);
-    // ...; sahf
-    drvmapp2(0x9E02);
-}
-
-drop(pop_de)
-{
-    // mov cx,[ebp]
-    drvmapp4(0x004D8B66);
-    // lahf; add bp,2
-    drvmapp4(0xC583669F);
-    // ...; sahf
-    drvmapp2(0x9E02);
-}
-
-drop(pop_hl)
-{
-    // mov dx,[ebp]
-    drvmapp4(0x00558B66);
-    // lahf; add bp,2
-    drvmapp4(0xC583669F);
-    // ...; sahf
-    drvmapp2(0x9E02);
+    drvmappn((uint8_t[]){
+                 @@asmr("movzx eax,byte [ebp]"),
+                 @@asmr("mov ah,[0x12345678+eax]", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&reverse_flag_table"),
+                 @@asmr("mov al,[ebp+1] \n add bp,2"),
+                 @@asmr("or eax,0x12345678", [0x78, 0x56, 0x34, 0x12], "MEM_BASE"),
+                 @@asmr("sahf")
+             });
 }
 
 drop(push_af)
 {
     // Das ist ganz schön fies, weil wir AF einfach umgekehrt verwendet und
     // zudem ein ganz anderes F-Register haben...
-    // push eax; lahf; push eax; movzx eax,ah
-    drvmapp4(0x0F509F50);
-    // ...; mov al,[flag_table+eax]
-    drvmapp4(0x808AC4B6);
-    drvmapp4((uintptr_t)&flag_table);
-    // mov ah,[esp]; sub bp,2
-    drvmapp4(0x6624248A);
-    // ...; mov [ebp],ax
-    drvmapp4(0x6602ED83);
-    // ...; pop eax
-    drvmapp4(0x58004589);
-    // sahf; pop eax
-    drvmapp2(0x589F);
-}
-
-drop(push_bc)
-{
-    // lahf; sub bp,2
-    drvmapp2(0x669F);
-    // ...; sahf
-    drvmapp4(0x9E02ED83);
-    // mov [ebp],bx
-    drvmapp4(0x005D8966);
-}
-
-drop(push_de)
-{
-    // lahf; sub bp,2
-    drvmapp2(0x669F);
-    // ...; sahf
-    drvmapp4(0x9E02ED83);
-    // mov [ebp],cx
-    drvmapp4(0x004D8966);
-}
-
-drop(push_hl)
-{
-    // lahf; sub bp,2
-    drvmapp2(0x669F);
-    // ...; sahf
-    drvmapp4(0x9E02ED83);
-    // mov [ebp],dx
-    drvmapp4(0x00558966);
+    drvmappn((uint8_t[]){
+                 @@asmr("push eax \n lahf \n push eax \n movzx eax,ah"),
+                 @@asmr("mov al,[0x12345678+eax]", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&flag_table"),
+                 @@asmr("mov ah,[esp] \n sub bp,2 \n mov [ebp],ax \n pop eax \n sahf \n pop eax")
+             });
 }
 
 drop(di)
 {
-    // mov byte [ime],0
-    drvmapp2(0x05C6);
-    drvmapp4((uintptr_t)&ime);
-    drvmapp1(0x00);
+    drvmappn(@@asm("mov byte [0x12345678],0", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&ime"));
 }
 
 drop(ei)
 {
-    // mov byte [ime],1
-    drvmapp2(0x05C6);
-    drvmapp4((uintptr_t)&ime);
-    drvmapp1(0x01);
-}
-
-drop(add_hl_bc)
-{
-    // Tolle Sache, das ZF muss unverändert bleiben... -.-
-    // lahf; push eax; mov al,ah
-    drvmapp4(0xE088509F);
-    // and al,0x40 (ZF behalten); add dx,bx
-    drvmapp4(0x01664024);
-    // ...; lahf; and ah,0xBF (ZF löschen)
-    drvmapp4(0xE4809FDA);
-    // ...; or ah,al; sahf
-    drvmapp4(0x9EC408BF);
-    // pop eax
-    drvmapp1(0x58);
-}
-
-drop(add_hl_de)
-{
-    // lahf; push eax; mov al,ah
-    drvmapp4(0xE088509F);
-    // and al,0x40 (ZF behalten); add dx,cx
-    drvmapp4(0x01664024);
-    // ...; lahf; and ah,0xBF (ZF löschen)
-    drvmapp4(0xE4809FCA);
-    // ...; or ah,al; sahf
-    drvmapp4(0x9EC408BF);
-    // pop eax
-    drvmapp1(0x58);
-}
-drop(add_hl_hl)
-{
-    // lahf; push eax; mov al,ah
-    drvmapp4(0xE088509F);
-    // and al,0x40 (ZF behalten); add dx,dx
-    drvmapp4(0x01664024);
-    // ...; lahf; and ah,0xBF (ZF löschen)
-    drvmapp4(0xE4809FD2);
-    // ...; or ah,al; sahf
-    drvmapp4(0x9EC408BF);
-    // pop eax
-    drvmapp1(0x58);
-}
-
-drop(add_hl_sp)
-{
-    // lahf; push eax; mov al,ah
-    drvmapp4(0xE088509F);
-    // and al,0x40 (ZF behalten); add dx,bp
-    drvmapp4(0x01664024);
-    // ...; lahf; and ah,0xBF (ZF löschen)
-    drvmapp4(0xE4809FEA);
-    // ...; or ah,al; sahf
-    drvmapp4(0x9EC408BF);
-    // pop eax
-    drvmapp1(0x58);
+    drvmappn(@@asm("mov byte [0x12345678],1", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&ime"));
 }
 
 drop(jp_hl)
 {
-    // mov [vm_ip],dx
-    drvmapp2(0x8966);
-    drvmapp1(0x15);
-    drvmapp4((uintptr_t)&vm_ip);
-    // mov byte [cycles_gone],dr_cycle_counter
-    drvmapp2(0x05C6);
-    drvmapp4((uintptr_t)&cycles_gone);
-    // ...; jmp dword ei
-    drvmapp2(dr_cycle_counter | 0xE900);
-    drvmapp4((uint32_t)(CODE_EXITI - (dri + 4)));
+    drvmappn((uint8_t[]){
+                 @@asmr("mov [0x12345678],dx", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&vm_ip"),
+                 @@asmr("mov byte [0x12345678],0xff", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&cycles_gone", [0xff], "dr_cycle_counter")
+             });
+    size_t here = dri;
+    drvmappn(@@asm("jmp dword 0x12345678", [0x78 - 5, 0x56, 0x34, 0x12], "(uint32_t)(CODE_EXITI - (here + 5))"));
 }
-
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-drop(rlca) // rotate left NOT through carry (sic)
-{
-    // rol al,1
-    drvmapp2(0xC0D0);
-    // lahf
-    drvmapp1(0x9F);
-    // and ah,0x2B (CF); sahf
-    drvmapp4(0x9E2BE480);
-}
-
-drop(rla) // rotate left through carry (sic)
-{
-    // rcl al,1
-    drvmapp2(0xD0D0);
-    // lahf
-    drvmapp1(0x9F);
-    // and ah,0x2B (CF); sahf
-    drvmapp4(0x9E2BE480);
-}
-
-drop(rrca) // rotate right NOT through carry (sic)
-{
-    // ror al,1
-    drvmapp2(0xC8D0);
-    // lahf
-    drvmapp1(0x9F);
-    // and ah,0x2B (CF); sahf
-    drvmapp4(0x9E2BE480);
-}
-
-drop(rra) // rotate right through carry (sic)
-{
-    // rcr al,1
-    drvmapp2(0xD8D0);
-    // lahf
-    drvmapp1(0x9F);
-    // and ah,0x2B (CF); sahf
-    drvmapp4(0x9E2BE480);
-}
-#endif
 
 drop(ld__nn_sp)
 {
-    // mov [MEM_BASE+nn],bp
-    drvmapp2(0x8966);
-    drvmapp1(0x2D);
-    drvmapp4(MEM_BASE + MEM16(drip));
+    drvmappn(@@asm("mov [0x12345678],bp", [0x78, 0x56, 0x34, 0x12], "MEM_BASE + MEM16(drip)"));
     drip += 2;
 }
 
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-drop(cpl_a)
-{
-    // not al
-    drvmapp2(0xD0F6);
-    // lahf
-    drvmapp1(0x9F);
-    // or ah,0x10 (AF); sahf
-    drvmapp4(0x9E10CC80);
-}
-
-drop(scf)
-{
-    // lahf; and ah,0x6A (ZF)
-    drvmapp4(0x6AE4809F);
-    // or ah,0x01 (CF); sahf
-    drvmapp4(0x9E01CC80);
-}
-
-drop(ccf)
-{
-    // lahf; and ah,0x6B (ZF)
-    drvmapp4(0x6BE4809F);
-    // xor ah,0x01 (CF); sahf
-    drvmapp4(0x9E01F480);
-}
-#endif
-
 drop(ld_a__nn)
 {
-    // mov al,[MEM_BASE+nn]
-    drvmapp1(0xA0);
-    drvmapp4(MEM_BASE + MEM16(drip));
+    drvmappn(@@asm("mov al,[0x12345678]", [0x78, 0x56, 0x34, 0x12], "MEM_BASE + MEM16(drip)"));
     drip += 2;
 }
 
 #ifdef UNSAVE_RAM_MAPPING
 drop(ld_a__ffn)
 {
-    // mov al,[MEM_BASE+0xFF00+n]
-    drvmapp1(0xA0);
-    drvmapp4(MEM_BASE + 0xFF00 + MEM8(drip++));
+    drvmappn(@@asm("mov al,[0x12345678]", [0x78, 0x56, 0x34, 0x12], "MEM_BASE + 0xff00 + MEM8(drip)"));
+    drip++;
 }
 
 drop(ld_a__ffc)
 {
-    // mov [.offs],bl
-    drvmapp2(0x1D88);
-    // ...;
-    drvmapp4((uintptr_t)&drc[dri + 5]);
-    // mov al,[MEM_BASE+0xFF00]
-    drvmapp1(0xA0);
-    // .offs:
-    drvmapp4(MEM_BASE + 0xFF00);
+    JUMP_DISTANCE_START();
+    uintptr_t target = &drc[dri + 7];
+    drvmappn((uint8_t[]){
+                 @@asmr("mov [0x12345678],bl", [0x78, 0x56, 0x34, 0x12], "target"),
+                 @@asmr("mov al,[0x12345678]", [0x78, 0x56, 0x34, 0x12], "MEM_BASE + 0xFF00")
+             });
+    ASSERT_JUMP_DISTANCE(0xb);
 }
 #endif
-
-drop(ld_hl_sp_n)
-{
-    // mov dx,bp; add dx,byte n
-    drvmapp4(0x66EA8966);
-    // ...
-    drvmapp2(0xC283);
-    drvmapp1(MEM8(drip++));
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-    // lahf; and ah,0x3B (AF und CF behalten)
-    drvmapp4(0x3BE4809F);
-    // sahf
-    drvmapp1(0x9E);
-#endif
-}
 
 static void (*const dynarec_table[256])(void) = {
-    dran(0x00, nop),
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-    dran(0x07, rlca),
-#endif
     dran(0x08, ld__nn_sp),
-    dran(0x09, add_hl_bc),
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-    dran(0x0F, rrca),
-    dran(0x17, rla),
-#endif
     dran(0x18, jr_n),
-    dran(0x19, add_hl_de),
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-    dran(0x1F, rra),
-#endif
     dran(0x20, jrnz_n),
-    dran(0x22, ldi__hl_a),
     dran(0x28, jrz_n),
-    dran(0x29, add_hl_hl),
-    dran(0x2A, ldi_a__hl),
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-    dran(0x2F, cpl_a),
-#endif
     dran(0x30, jrnc_n),
-    dran(0x32, ldd__hl_a),
-    dran(0x36, ld__hl_nn),
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-    dran(0x37, scf),
-#endif
     dran(0x38, jrc_n),
-    dran(0x39, add_hl_sp),
-    dran(0x3A, ldd_a__hl),
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-    dran(0x3F, ccf),
-#endif
     dran(0x76, leave_vm_imm_op0), // halt
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-    dran(0xA0, and_a_b),
-    dran(0xA1, and_a_c),
-    dran(0xA2, and_a_d),
-    dran(0xA3, and_a_e),
-    dran(0xA4, and_a_h),
-    dran(0xA5, and_a_l),
-    dran(0xA6, and_a__hl),
-    dran(0xA7, and_a_a),
-    dran(0xA8, xor_a_b),
-    dran(0xA9, xor_a_c),
-    dran(0xAA, xor_a_d),
-    dran(0xAB, xor_a_e),
-    dran(0xAC, xor_a_h),
-    dran(0xAD, xor_a_l),
-    dran(0xAE, xor_a__hl),
-    dran(0xAF, xor_a_a),
-    dran(0xB0, or_a_b),
-    dran(0xB1, or_a_c),
-    dran(0xB2, or_a_d),
-    dran(0xB3, or_a_e),
-    dran(0xB4, or_a_h),
-    dran(0xB5, or_a_l),
-    dran(0xB6, or_a__hl),
-    dran(0xB7, or_a_a),
-#endif
     dran(0xC0, retnz),
-    dran(0xC1, pop_bc),
     dran(0xC2, jpnz_nn),
     dran(0xC3, jp_nn),
     dran(0xC4, callnz_nn),
-    dran(0xC5, push_bc),
     dran(0xC7, rst_0x00),
     dran(0xC8, retz),
     dran(0xC9, ret),
@@ -754,10 +332,8 @@ static void (*const dynarec_table[256])(void) = {
     dran(0xCD, call_nn),
     dran(0xCF, rst_0x08),
     dran(0xD0, retnc),
-    dran(0xD1, pop_de),
     dran(0xD2, jpnc_nn),
     dran(0xD4, callnc_nn),
-    dran(0xD5, push_de),
     dran(0xD7, rst_0x10),
     dran(0xD8, retc),
     dran(0xD9, reti),
@@ -765,18 +341,10 @@ static void (*const dynarec_table[256])(void) = {
     dran(0xDC, callc_nn),
     dran(0xDF, rst_0x18),
     dran(0xE0, leave_vm_imm_op1), // ld__ffn_a
-    dran(0xE1, pop_hl),
     dran(0xE2, leave_vm_imm_op0), // ld__ffc_a
-    dran(0xE5, push_hl),
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-    dran(0xE6, and_a_n),
-#endif
     dran(0xE7, rst_0x20),
     dran(0xE9, jp_hl),
     dran(0xEA, ld__nn_a),
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-    dran(0xEE, xor_a_n),
-#endif
     dran(0xEF, rst_0x28),
 #ifndef UNSAVE_RAM_MAPPING
     dran(0xF0, leave_vm_imm_op1), // ld_a__ffn
@@ -791,422 +359,305 @@ static void (*const dynarec_table[256])(void) = {
 #endif
     dran(0xF3, di),
     dran(0xF5, push_af),
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-    dran(0xF6, or_a_n),
-#endif
     dran(0xF7, rst_0x30),
-    dran(0xF8, ld_hl_sp_n),
     dran(0xFA, ld_a__nn),
     dran(0xFB, ei),
     dran(0xFF, rst_0x38)
 };
 
-static const size_t dynarec_const_length[256] = {
-    [0x01] = 4 | DYNAREC_LOAD,
-    [0x02] = 2 | DYNAREC_CNST,
-    [0x03] = 4 | DYNAREC_CNST,
-    [0x04] = 2 | DYNAREC_CNST,
-    [0x05] = 2 | DYNAREC_CNST,
-    [0x06] = 2 | DYNAREC_LOAD,
-#ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x07] = 2 | DYNAREC_CNST,
-#endif
-    [0x0A] = 2 | DYNAREC_CNST,
-    [0x0B] = 4 | DYNAREC_CNST,
-    [0x0C] = 2 | DYNAREC_CNST,
-    [0x0D] = 2 | DYNAREC_CNST,
-    [0x0E] = 2 | DYNAREC_LOAD,
-#ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x0F] = 2 | DYNAREC_CNST,
-#endif
-    [0x11] = 4 | DYNAREC_LOAD,
-    [0x12] = 2 | DYNAREC_CNST,
-    [0x13] = 4 | DYNAREC_CNST,
-    [0x14] = 2 | DYNAREC_CNST,
-    [0x15] = 2 | DYNAREC_CNST,
-    [0x16] = 2 | DYNAREC_LOAD,
-#ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x17] = 2 | DYNAREC_CNST,
-#endif
-    [0x1A] = 2 | DYNAREC_CNST,
-    [0x1B] = 4 | DYNAREC_CNST,
-    [0x1C] = 2 | DYNAREC_CNST,
-    [0x1D] = 2 | DYNAREC_CNST,
-    [0x1E] = 2 | DYNAREC_LOAD,
-#ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x1F] = 2 | DYNAREC_CNST,
-#endif
-    [0x21] = 4 | DYNAREC_LOAD,
-    [0x23] = 4 | DYNAREC_CNST,
-    [0x24] = 2 | DYNAREC_CNST,
-    [0x25] = 2 | DYNAREC_CNST,
-    [0x26] = 2 | DYNAREC_LOAD,
-    [0x27] = 1 | DYNAREC_CNST,
-    [0x2B] = 4 | DYNAREC_CNST,
-    [0x2C] = 2 | DYNAREC_CNST,
-    [0x2D] = 2 | DYNAREC_CNST,
-    [0x2E] = 2 | DYNAREC_LOAD,
-#ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x2F] = 2 | DYNAREC_CNST,
-#endif
-    [0x31] = 4 | DYNAREC_LOAD,
-    [0x33] = 4 | DYNAREC_CNST,
-    [0x34] = 2 | DYNAREC_CNST,
-    [0x35] = 2 | DYNAREC_CNST,
-#ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x37] = 2 | DYNAREC_CNST,
-#endif
-    [0x3B] = 4 | DYNAREC_CNST,
-    [0x3C] = 2 | DYNAREC_CNST,
-    [0x3D] = 2 | DYNAREC_CNST,
-    [0x3E] = 2 | DYNAREC_LOAD,
-#ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x3F] = 2 | DYNAREC_CNST,
-#endif
-    [0x40] = 2 | DYNAREC_CNST,
-    [0x41] = 2 | DYNAREC_CNST,
-    [0x42] = 2 | DYNAREC_CNST,
-    [0x43] = 2 | DYNAREC_CNST,
-    [0x44] = 2 | DYNAREC_CNST,
-    [0x45] = 2 | DYNAREC_CNST,
-    [0x46] = 2 | DYNAREC_CNST,
-    [0x47] = 2 | DYNAREC_CNST,
-    [0x48] = 2 | DYNAREC_CNST,
-    [0x49] = 2 | DYNAREC_CNST,
-    [0x4A] = 2 | DYNAREC_CNST,
-    [0x4B] = 2 | DYNAREC_CNST,
-    [0x4C] = 2 | DYNAREC_CNST,
-    [0x4D] = 2 | DYNAREC_CNST,
-    [0x4E] = 2 | DYNAREC_CNST,
-    [0x4F] = 2 | DYNAREC_CNST,
-    [0x50] = 2 | DYNAREC_CNST,
-    [0x51] = 2 | DYNAREC_CNST,
-    [0x52] = 2 | DYNAREC_CNST,
-    [0x53] = 2 | DYNAREC_CNST,
-    [0x54] = 2 | DYNAREC_CNST,
-    [0x55] = 2 | DYNAREC_CNST,
-    [0x56] = 2 | DYNAREC_CNST,
-    [0x57] = 2 | DYNAREC_CNST,
-    [0x58] = 2 | DYNAREC_CNST,
-    [0x59] = 2 | DYNAREC_CNST,
-    [0x5A] = 2 | DYNAREC_CNST,
-    [0x5B] = 2 | DYNAREC_CNST,
-    [0x5C] = 2 | DYNAREC_CNST,
-    [0x5D] = 2 | DYNAREC_CNST,
-    [0x5E] = 2 | DYNAREC_CNST,
-    [0x5F] = 2 | DYNAREC_CNST,
-    [0x60] = 2 | DYNAREC_CNST,
-    [0x61] = 2 | DYNAREC_CNST,
-    [0x62] = 2 | DYNAREC_CNST,
-    [0x63] = 2 | DYNAREC_CNST,
-    [0x64] = 2 | DYNAREC_CNST,
-    [0x65] = 2 | DYNAREC_CNST,
-    [0x66] = 2 | DYNAREC_CNST,
-    [0x67] = 2 | DYNAREC_CNST,
-    [0x68] = 2 | DYNAREC_CNST,
-    [0x69] = 2 | DYNAREC_CNST,
-    [0x6A] = 2 | DYNAREC_CNST,
-    [0x6B] = 2 | DYNAREC_CNST,
-    [0x6C] = 2 | DYNAREC_CNST,
-    [0x6D] = 2 | DYNAREC_CNST,
-    [0x6E] = 2 | DYNAREC_CNST,
-    [0x6F] = 2 | DYNAREC_CNST,
-    [0x70] = 2 | DYNAREC_CNST,
-    [0x71] = 2 | DYNAREC_CNST,
-    [0x72] = 2 | DYNAREC_CNST,
-    [0x73] = 2 | DYNAREC_CNST,
-    [0x74] = 2 | DYNAREC_CNST,
-    [0x75] = 2 | DYNAREC_CNST,
-    [0x77] = 2 | DYNAREC_CNST,
-    [0x78] = 2 | DYNAREC_CNST,
-    [0x79] = 2 | DYNAREC_CNST,
-    [0x7A] = 2 | DYNAREC_CNST,
-    [0x7B] = 2 | DYNAREC_CNST,
-    [0x7C] = 2 | DYNAREC_CNST,
-    [0x7D] = 2 | DYNAREC_CNST,
-    [0x7E] = 2 | DYNAREC_CNST,
-    [0x7F] = 2 | DYNAREC_CNST,
-    [0x80] = 2 | DYNAREC_CNST,
-    [0x81] = 2 | DYNAREC_CNST,
-    [0x82] = 2 | DYNAREC_CNST,
-    [0x83] = 2 | DYNAREC_CNST,
-    [0x84] = 2 | DYNAREC_CNST,
-    [0x85] = 2 | DYNAREC_CNST,
-    [0x86] = 2 | DYNAREC_CNST,
-    [0x87] = 2 | DYNAREC_CNST,
-    [0x88] = 2 | DYNAREC_CNST,
-    [0x89] = 2 | DYNAREC_CNST,
-    [0x8A] = 2 | DYNAREC_CNST,
-    [0x8B] = 2 | DYNAREC_CNST,
-    [0x8C] = 2 | DYNAREC_CNST,
-    [0x8D] = 2 | DYNAREC_CNST,
-    [0x8E] = 2 | DYNAREC_CNST,
-    [0x8F] = 2 | DYNAREC_CNST,
-    [0x90] = 2 | DYNAREC_CNST,
-    [0x91] = 2 | DYNAREC_CNST,
-    [0x92] = 2 | DYNAREC_CNST,
-    [0x93] = 2 | DYNAREC_CNST,
-    [0x94] = 2 | DYNAREC_CNST,
-    [0x95] = 2 | DYNAREC_CNST,
-    [0x96] = 2 | DYNAREC_CNST,
-    [0x97] = 2 | DYNAREC_CNST,
-    [0x98] = 2 | DYNAREC_CNST,
-    [0x99] = 2 | DYNAREC_CNST,
-    [0x9A] = 2 | DYNAREC_CNST,
-    [0x9B] = 2 | DYNAREC_CNST,
-    [0x9C] = 2 | DYNAREC_CNST,
-    [0x9D] = 2 | DYNAREC_CNST,
-    [0x9E] = 2 | DYNAREC_CNST,
-    [0x9F] = 2 | DYNAREC_CNST,
-#ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0xA0] = 2 | DYNAREC_CNST,
-    [0xA1] = 2 | DYNAREC_CNST,
-    [0xA2] = 2 | DYNAREC_CNST,
-    [0xA3] = 2 | DYNAREC_CNST,
-    [0xA4] = 2 | DYNAREC_CNST,
-    [0xA5] = 2 | DYNAREC_CNST,
-    [0xA6] = 2 | DYNAREC_CNST,
-    [0xA7] = 2 | DYNAREC_CNST,
-    [0xA8] = 2 | DYNAREC_CNST,
-    [0xA9] = 2 | DYNAREC_CNST,
-    [0xAA] = 2 | DYNAREC_CNST,
-    [0xAB] = 2 | DYNAREC_CNST,
-    [0xAC] = 2 | DYNAREC_CNST,
-    [0xAD] = 2 | DYNAREC_CNST,
-    [0xAE] = 2 | DYNAREC_CNST,
-    [0xAF] = 2 | DYNAREC_CNST,
-    [0xB0] = 2 | DYNAREC_CNST,
-    [0xB1] = 2 | DYNAREC_CNST,
-    [0xB2] = 2 | DYNAREC_CNST,
-    [0xB3] = 2 | DYNAREC_CNST,
-    [0xB4] = 2 | DYNAREC_CNST,
-    [0xB5] = 2 | DYNAREC_CNST,
-    [0xB6] = 2 | DYNAREC_CNST,
-    [0xB7] = 2 | DYNAREC_CNST,
-#endif
-    [0xB8] = 2 | DYNAREC_CNST,
-    [0xB9] = 2 | DYNAREC_CNST,
-    [0xBA] = 2 | DYNAREC_CNST,
-    [0xBB] = 2 | DYNAREC_CNST,
-    [0xBC] = 2 | DYNAREC_CNST,
-    [0xBD] = 2 | DYNAREC_CNST,
-    [0xBE] = 2 | DYNAREC_CNST,
-    [0xBF] = 2 | DYNAREC_CNST,
-    [0xC6] = 2 | DYNAREC_LOAD,
-    [0xCE] = 2 | DYNAREC_LOAD,
-    [0xD6] = 2 | DYNAREC_LOAD,
-    [0xDE] = 2 | DYNAREC_LOAD,
-#ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0xE6] = 2 | DYNAREC_LOAD,
-    [0xEE] = 2 | DYNAREC_LOAD,
-    [0xF6] = 2 | DYNAREC_LOAD,
-#endif
-    [0xF9] = 2 | DYNAREC_CNST,
-    [0xFE] = 2 | DYNAREC_LOAD
+struct DynarecConstInsn {
+    const uint8_t data[28];
+    uint8_t length;
+    uint8_t load_offset;
+    uint8_t load_length;
+
+    uint8_t _padding;
 };
 
-static const uint_fast32_t dynarec_const[256] = {
-    [0x01] = 0x0000BB66,    // ld bc,nn = mov bx,nn
-    [0x02] = 0x0388,        // ld (bc),a = mov [ebx],al
-    [0x03] = 0x9E43669F,    // inc bc = lahf; inc bx; sahf
-    [0x04] = 0xC7FE,        // inc b = inc bh
-    [0x05] = 0xCFFE,        // dec b = dec bh
-    [0x06] = 0x00B7,        // ld b,n = mov bh,n
+#define drci(...) \
+    { \
+        .data = __VA_ARGS__, \
+        .length = sizeof((uint8_t[])__VA_ARGS__), \
+        \
+        .load_offset = 0, \
+        .load_length = 0, \
+        \
+        ._padding = 0, \
+    }
+
+#define drci_l(ll, lo, ...) \
+    { \
+        .data = __VA_ARGS__, \
+        .length = sizeof((uint8_t[])__VA_ARGS__), \
+        .load_offset = lo, \
+        .load_length = ll, \
+        \
+        ._padding = 0, \
+    }
+
+static const struct DynarecConstInsn dynarec_const_insns[256] = {
+    [0x00] = drci(@@asmi("nop")),                       // nop (special-casing this as a zero-length instruction is stupid)
+    [0x01] = drci_l(sizeof(uint16_t), @@asmi_with_offset("mov bx,0x1234", [0x34, 0x12])), // ld bc,nn
+    [0x02] = drci(@@asmi("mov [ebx],al")),              // ld (bc),a
+    [0x03] = drci(@@asmi("lahf \n inc bx \n sahf")),    // inc bc
+    [0x04] = drci(@@asmi("inc bh")),                    // inc b
+    [0x05] = drci(@@asmi("dec bh")),                    // dec b
+    [0x06] = drci_l(sizeof(uint8_t), @@asmi_with_offset("mov bh,0xff", [0xff])), // ld b,n
 #ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x07] = 0xC0D0,        // rlca = rol al,1
+    [0x07] = drci(@@asmi("rol al,1")),                  // rlca
+#else
+    [0x07] = drci(@@asmi("rol al,1 \n lahf \n and ah,0x2b ; CF \n sahf")), // rlca
 #endif
-    [0x0A] = 0x038A,        // ld a,(bc) = mov al,[ebx]
-    [0x0B] = 0x9E4B669F,    // dec bc = lahf; dec bx; sahf
-    [0x0C] = 0xC3FE,        // inc c = inc bl
-    [0x0D] = 0xCBFE,        // dec c = dec bl
-    [0x0E] = 0x00B3,        // ld c,n = mov bl,n
+    [0x09] = drci(@@asmi("lahf \n push eax \n mov al,ah \n and al,0x40 ; keep ZF \n add dx,bx \n lahf \n and ah,0xbf ; clear ZF \n or ah,al \n sahf \n pop eax")), // add hl,bc -- ZF must stay unchanged
+    [0x0a] = drci(@@asmi("mov al,[ebx]")),              // ld a,(bc)
+    [0x0b] = drci(@@asmi("lahf \n dec bx \n sahf")),    // dec bc
+    [0x0c] = drci(@@asmi("inc bl")),                    // inc c
+    [0x0d] = drci(@@asmi("dec bl")),                    // dec c
+    [0x0e] = drci_l(sizeof(uint8_t), @@asmi_with_offset("mov bl,0xff", [0xff])), // ld c,n
 #ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x0F] = 0xC8D0,        // rrca = ror al,1
+    [0x0f] = drci(@@asmi("ror al,1")),                  // rrca
+#else
+    [0x0f] = drci(@@asmi("ror al,1 \n lahf \n and ah,0x2b ; CF \n sahf")), // rrca
 #endif
-    [0x11] = 0x0000B966,    // ld de,nn = mov cx,nn
-    [0x12] = 0x0188,        // ld (de),a = mov [ecx],al
-    [0x13] = 0x9E41669F,    // inc de = lahf; inc cx; sahf
-    [0x14] = 0xC5FE,        // inc d = inc ch
-    [0x15] = 0xCDFE,        // dec d = dec ch
-    [0x16] = 0x00B5,        // ld d,n = mov ch,n
+    [0x11] = drci_l(sizeof(uint16_t), @@asmi_with_offset("mov cx,0x1234", [0x34, 0x12])), // ld de,nn
+    [0x12] = drci(@@asmi("mov [ecx],al")),              // ld (de),a
+    [0x13] = drci(@@asmi("lahf \n inc cx \n sahf")),    // inc de
+    [0x14] = drci(@@asmi("inc ch")),                    // inc d
+    [0x15] = drci(@@asmi("dec ch")),                    // dec d
+    [0x16] = drci_l(sizeof(uint8_t), @@asmi_with_offset("mov ch,0xff", [0xff])), // ld d,n
 #ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x17] = 0xD0D0,        // rla = rcl al,1
+    [0x17] = drci(@@asmi("rcl al,1")),                  // rla
+#else
+    [0x17] = drci(@@asmi("rcl al,1 \n lahf \n and ah,0x2b ; CF \n sahf")), // rla
 #endif
-    [0x1A] = 0x018A,        // ld a,(de) = mov al,[ecx]
-    [0x1B] = 0x9E49669F,    // dec de = lahf; dec cx; sahf
-    [0x1C] = 0xC1FE,        // inc e = inc cl
-    [0x1D] = 0xC9FE,        // dec e = dec cl
-    [0x1E] = 0x00B1,        // ld e,n = mov cl,n
+    [0x19] = drci(@@asmi("lahf \n push eax \n mov al,ah \n and al,0x40 ; keep ZF \n add dx,cx \n lahf \n and ah,0xbf ; clear ZF \n or ah,al \n sahf \n pop eax")), // add hl,de -- ZF must stay unchanged
+    [0x1a] = drci(@@asmi("mov al,[ecx]")),              // ld a,(de)
+    [0x1b] = drci(@@asmi("lahf \n dec cx \n sahf")),    // dec de
+    [0x1c] = drci(@@asmi("inc cl")),                    // inc e
+    [0x1d] = drci(@@asmi("dec cl")),                    // dec e
+    [0x1e] = drci_l(sizeof(uint8_t), @@asmi_with_offset("mov cl,0xff", [0xff])), // ld e,n
 #ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x1F] = 0xD8D0,        // rra = rcr al,1
+    [0x1f] = drci(@@asmi("rcr al,1")),                  // rra
+#else
+    [0x1f] = drci(@@asmi("rcr al,1 \n lahf \n and ah,0x2b ; CF \n sahf")), // rra
 #endif
-    [0x21] = 0x0000BA66,    // ld hl,nn = mov dx,nn
-    [0x23] = 0x9E42669F,    // inc hl = lahf; inc dx; sahf
-    [0x24] = 0xC6FE,        // inc h = inc dh
-    [0x25] = 0xCEFE,        // dec h = dec dh
-    [0x26] = 0x00B6,        // ld h,n = mov dh,n
-    [0x27] = 0x27,          // daa (roflol)
-    [0x2B] = 0x9E4A669F,    // dec hl = lahf; dec dx; sahf
-    [0x2C] = 0xC2FE,        // inc l = inc dl
-    [0x2D] = 0xCAFE,        // dec l = dec dl
-    [0x2E] = 0x00B2,        // ld l,n = mov dl,n
+    [0x21] = drci_l(sizeof(uint16_t), @@asmi_with_offset("mov dx,0x1234", [0x34, 0x12])), // ld hl,nn
+    [0x22] = drci(@@asmi("mov [edx],al \n lahf \n inc dx \n sahf")), // ldi (hl),a
+    [0x23] = drci(@@asmi("lahf \n inc dx \n sahf")),    // inc hl
+    [0x24] = drci(@@asmi("inc dh")),                    // inc h
+    [0x25] = drci(@@asmi("dec dh")),                    // dec h
+    [0x26] = drci_l(sizeof(uint8_t), @@asmi_with_offset("mov dh,0xff", [0xff])), // ld h,n
+    [0x27] = drci(@@asmi("daa")),                       // roflol
+    [0x29] = drci(@@asmi("lahf \n push eax \n mov al,ah \n and al,0x40 ; keep ZF \n add dx,dx \n lahf \n and ah,0xbf ; clear ZF \n or ah,al \n sahf \n pop eax")), // add hl,hl -- ZF must stay unchanged
+    [0x2a] = drci(@@asmi("mov al,[edx] \n lahf \n inc dx \n sahf")), // ldi a,(hl)
+    [0x2b] = drci(@@asmi("lahf \n dec dx \n sahf")),    // dec hl
+    [0x2c] = drci(@@asmi("inc dl")),                    // inc l
+    [0x2d] = drci(@@asmi("dec dl")),                    // dec l
+    [0x2e] = drci_l(sizeof(uint8_t), @@asmi_with_offset("mov dl,0xff", [0xff])), // ld l,n
 #ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x2F] = 0xD0F6,        // cpl a = not al
+    [0x2f] = drci(@@asmi("not al")),                    // cpl a
+#else
+    [0x2f] = drci(@@asmi("not al \n lahf \n or ah,0x10 ; AF \n sahf")), // cpl a
 #endif
-    [0x31] = 0x0000BD66,    // ld sp,nn = mov bp,nn
-    [0x33] = 0x9E45669F,    // inc sp = lahf; inc bp; sahf
-    [0x34] = 0x02FE,        // inc (hl) = inc byte [edx]
-    [0x35] = 0x0AFE,        // dec (hl) = dec byte [edx]
+    [0x31] = drci_l(sizeof(uint16_t), @@asmi_with_offset("mov bp,0x1234", [0x34, 0x12])), // ld sp,nn
+    [0x32] = drci(@@asmi("mov [edx],al \n lahf \n dec dx \n sahf")), // ldd (hl),a
+    [0x33] = drci(@@asmi("lahf \n inc bp \n sahf")),    // inc sp
+    [0x34] = drci(@@asmi("inc byte [edx]")),            // inc (hl)
+    [0x35] = drci(@@asmi("dec byte [edx]")),            // dec (hl)
+    [0x36] = drci_l(sizeof(uint8_t), @@asmi_with_offset("mov byte [edx],0xff", [0xff])), // ld (hl),n
 #ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x37] = 0x90F9,        // scf = stc; nop
+    [0x37] = drci(@@asmi("stc")),                       // scf (note: this was stc \n nop before, no idea why)
+#else
+    [0x37] = drci(@@asmi("lahf \n and ah,0x6a ; ZF \n or ah,0x01 ; CF \n sahf")), // scf
 #endif
-    [0x3B] = 0x9E4D669F,    // dec sp = lahf; dec bp; sahf
-    [0x3C] = 0xC0FE,        // inc a = inc al
-    [0x3D] = 0xC8FE,        // dec a = dec al
-    [0x3E] = 0x00B0,        // ld a,n = mov al,n
+    [0x39] = drci(@@asmi("lahf \n push eax \n mov al,ah \n and al,0x40 ; keep ZF \n add dx,bp \n lahf \n and ah,0xbf ; clear ZF \n or ah,al \n sahf \n pop eax")), // add hl,sp -- ZF must stay unchanged
+    [0x3a] = drci(@@asmi("mov al,[edx] \n lahf \n dec dx \n sahf")), // ldd a,(hl)
+    [0x3b] = drci(@@asmi("lahf \n dec bp \n sahf")),    // dec sp
+    [0x3c] = drci(@@asmi("inc al")),                    // inc a
+    [0x3d] = drci(@@asmi("dec al")),                    // dec a
+    [0x3e] = drci_l(sizeof(uint8_t), @@asmi_with_offset("mov al,0xff", [0xff])), // ld a,n
 #ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0x3F] = 0x90F5,        // ccf = cmc; nop
+    [0x3f] = drci(@@asmi("cmc")),                       // ccf (note: this was cmc \n nop before, no idea why)
+#else
+    [0x3f] = drci(@@asmi("lahf \n and ah,0x6a ; ZF \n xor ah,0x01 ; CF \n sahf")), // ccf
 #endif
-    [0x40] = 0xFF88,        // ld b,b = mov bh,bh
-    [0x41] = 0xDF88,        // ld b,c = mov bh,bl
-    [0x42] = 0xEF88,        // ld b,d = mov bh,ch
-    [0x43] = 0xCF88,        // ld b,e = mov bh,cl
-    [0x44] = 0xF788,        // ld b,h = mov bh,dh
-    [0x45] = 0xD788,        // ld b,l = mov bh,dl
-    [0x46] = 0x3A8A,        // ld b,(hl) = mov bh,[edx]
-    [0x47] = 0xC788,        // ld b,a = mov bh,al
-    [0x48] = 0xFB88,        // ld c,b = mov bl,bh
-    [0x49] = 0xDB88,        // ld c,c = mov bl,bl
-    [0x4A] = 0xEB88,        // ld c,d = mov bl,ch
-    [0x4B] = 0xCB88,        // ld c,e = mov bl,cl
-    [0x4C] = 0xF388,        // ld c,h = mov bl,dh
-    [0x4D] = 0xD388,        // ld c,l = mov bl,dl
-    [0x4E] = 0x1A8A,        // ld c,(hl) = mov bl,[edx]
-    [0x4F] = 0xC388,        // ld c,a = mov bl,al
-    [0x50] = 0xFD88,        // ld d,b = mov ch,bh
-    [0x51] = 0xDD88,        // ld d,c = mov ch,bl
-    [0x52] = 0xED88,        // ld d,d = mov ch,ch
-    [0x53] = 0xCD88,        // ld d,e = mov ch,cl
-    [0x54] = 0xF588,        // ld d,h = mov ch,dh
-    [0x55] = 0xD588,        // ld d,l = mov ch,dl
-    [0x56] = 0x2A8A,        // ld d,(hl) = mov ch,[edx]
-    [0x57] = 0xC588,        // ld d,a = mov ch,al
-    [0x58] = 0xF988,        // ld e,b = mov cl,bh
-    [0x59] = 0xD988,        // ld e,c = mov cl,bl
-    [0x5A] = 0xE988,        // ld e,d = mov cl,ch
-    [0x5B] = 0xC988,        // ld e,e = mov cl,cl
-    [0x5C] = 0xF188,        // ld e,h = mov cl,dh
-    [0x5D] = 0xD188,        // ld e,l = mov cl,dl
-    [0x5E] = 0x0A8A,        // ld e,(hl) = mov cl,[edx]
-    [0x5F] = 0xC188,        // ld e,a = mov cl,al
-    [0x60] = 0xFE88,        // ld h,b = mov dh,bh
-    [0x61] = 0xDE88,        // ld h,c = mov dh,bl
-    [0x62] = 0xEE88,        // ld h,d = mov dh,ch
-    [0x63] = 0xCE88,        // ld h,e = mov dh,cl
-    [0x64] = 0xF688,        // ld h,h = mov dh,dh
-    [0x65] = 0xD688,        // ld h,l = mov dh,dl
-    [0x66] = 0x328A,        // ld h,(hl) = mov dh,[edx]
-    [0x67] = 0xC688,        // ld h,a = mov dh,al
-    [0x68] = 0xFA88,        // ld l,b = mov dl,bh
-    [0x69] = 0xDA88,        // ld l,c = mov dl,bl
-    [0x6A] = 0xEA88,        // ld l,d = mov dl,ch
-    [0x6B] = 0xCA88,        // ld l,e = mov dl,cl
-    [0x6C] = 0xF288,        // ld l,h = mov dl,dh
-    [0x6D] = 0xD288,        // ld l,l = mov dl,dl
-    [0x6E] = 0x128A,        // ld l,(hl) = mov dl,[edx]
-    [0x6F] = 0xC288,        // ld l,a = mov dl,al
-    [0x70] = 0x3A88,        // ld (hl),b = mov [edx],bh
-    [0x71] = 0x1A88,        // ld (hl),c = mov [edx],bl
-    [0x72] = 0x2A88,        // ld (hl),d = mov [edx],ch
-    [0x73] = 0x0A88,        // ld (hl),e = mov [edx],cl
-    [0x74] = 0x3288,        // ld (hl),h = mov [edx],dh
-    [0x75] = 0x1288,        // ld (hl),l = mov [edx],dl
-    [0x77] = 0x0288,        // ld (Hl),a = mov [edx],al
-    [0x78] = 0xF888,        // ld a,b = mov al,bh
-    [0x79] = 0xD888,        // ld a,c = mov al,bl
-    [0x7A] = 0xE888,        // ld a,d = mov al,ch
-    [0x7B] = 0xC888,        // ld a,e = mov al,cl
-    [0x7C] = 0xF088,        // ld a,h = mov al,dh
-    [0x7D] = 0xD088,        // ld a,l = mov al,dl
-    [0x7E] = 0x028A,        // ld a,(hl) = mov al,[edx]
-    [0x7F] = 0xC088,        // ld a,a = mov al,al
-    [0x80] = 0xF800,        // add a,b = add al,bh
-    [0x81] = 0xD800,        // add a,c = add al,bl
-    [0x82] = 0xE800,        // add a,d = add al,ch
-    [0x83] = 0xC800,        // add a,e = add al,cl
-    [0x84] = 0xF000,        // add a,h = add al,dh
-    [0x85] = 0xD000,        // add a,l = add al,dl
-    [0x86] = 0x0202,        // add a,(hl) = add al,[edx]
-    [0x87] = 0xC000,        // add a,a = add al,al
-    [0x88] = 0xF810,        // adc a,b = adc al,bh
-    [0x89] = 0xD810,        // adc a,c = adc al,bl
-    [0x8A] = 0xE810,        // adc a,d = adc al,ch
-    [0x8B] = 0xC810,        // adc a,e = adc al,cl
-    [0x8C] = 0xF010,        // adc a,h = adc al,dh
-    [0x8D] = 0xD010,        // adc a,l = adc al,dl
-    [0x8E] = 0x0212,        // adc a,(hl) = add al,[edx]
-    [0x8F] = 0xC010,        // adc a,a = adc al,al
-    [0x90] = 0xF828,        // sub a,b = sub al,bh
-    [0x91] = 0xD828,        // sub a,c = sub al,bl
-    [0x92] = 0xE828,        // sub a,d = sub al,ch
-    [0x93] = 0xC828,        // sub a,e = sub al,cl
-    [0x94] = 0xF028,        // sub a,h = sub al,dh
-    [0x95] = 0xD028,        // sub a,l = sub al,dl
-    [0x96] = 0x022A,        // sub a,(hl) = sub al,[edx]
-    [0x97] = 0xC028,        // sub a,a = sub al,al
-    [0x98] = 0xF818,        // sbc a,b = sbb al,bh
-    [0x99] = 0xD818,        // sbc a,c = sbb al,bl
-    [0x9A] = 0xE818,        // sbc a,d = sbb al,ch
-    [0x9B] = 0xC818,        // sbc a,e = sbb al,cl
-    [0x9C] = 0xF018,        // sbc a,h = sbb al,dh
-    [0x9D] = 0xD018,        // sbc a,l = sbb al,dl
-    [0x9E] = 0x021A,        // sbc a,(hl) = sbb al,[edx]
-    [0x9F] = 0xC018,        // sbc a,a = sbb al,al
+    [0x40] = drci(@@asmi("mov bh,bh")),                 // ld b,b
+    [0x41] = drci(@@asmi("mov bh,bl")),                 // ld b,c
+    [0x42] = drci(@@asmi("mov bh,ch")),                 // ld b,d
+    [0x43] = drci(@@asmi("mov bh,cl")),                 // ld b,e
+    [0x44] = drci(@@asmi("mov bh,dh")),                 // ld b,h
+    [0x45] = drci(@@asmi("mov bh,dl")),                 // ld b,l
+    [0x46] = drci(@@asmi("mov bh,[edx]")),              // ld b,(hl)
+    [0x47] = drci(@@asmi("mov bh,al")),                 // ld b,a
+    [0x48] = drci(@@asmi("mov bl,bh")),                 // ld c,b
+    [0x49] = drci(@@asmi("mov bl,bl")),                 // ld c,c
+    [0x4a] = drci(@@asmi("mov bl,ch")),                 // ld c,d
+    [0x4b] = drci(@@asmi("mov bl,cl")),                 // ld c,e
+    [0x4c] = drci(@@asmi("mov bl,dh")),                 // ld c,h
+    [0x4d] = drci(@@asmi("mov bl,dl")),                 // ld c,l
+    [0x4e] = drci(@@asmi("mov bl,[edx]")),              // ld c,(hl)
+    [0x4f] = drci(@@asmi("mov bl,al")),                 // ld c,a
+    [0x50] = drci(@@asmi("mov ch,bh")),                 // ld d,b
+    [0x51] = drci(@@asmi("mov ch,bl")),                 // ld d,c
+    [0x52] = drci(@@asmi("mov ch,ch")),                 // ld d,d
+    [0x53] = drci(@@asmi("mov ch,cl")),                 // ld d,e
+    [0x54] = drci(@@asmi("mov ch,dh")),                 // ld d,h
+    [0x55] = drci(@@asmi("mov ch,dl")),                 // ld d,l
+    [0x56] = drci(@@asmi("mov ch,[edx]")),              // ld d,(hl)
+    [0x57] = drci(@@asmi("mov ch,al")),                 // ld d,a
+    [0x58] = drci(@@asmi("mov cl,bh")),                 // ld e,b
+    [0x59] = drci(@@asmi("mov cl,bl")),                 // ld e,c
+    [0x5a] = drci(@@asmi("mov cl,ch")),                 // ld e,d
+    [0x5b] = drci(@@asmi("mov cl,cl")),                 // ld e,e
+    [0x5c] = drci(@@asmi("mov cl,dh")),                 // ld e,h
+    [0x5d] = drci(@@asmi("mov cl,dl")),                 // ld e,l
+    [0x5e] = drci(@@asmi("mov cl,[edx]")),              // ld e,(hl)
+    [0x5f] = drci(@@asmi("mov cl,al")),                 // ld e,a
+    [0x60] = drci(@@asmi("mov dh,bh")),                 // ld h,b
+    [0x61] = drci(@@asmi("mov dh,bl")),                 // ld h,c
+    [0x62] = drci(@@asmi("mov dh,ch")),                 // ld h,d
+    [0x63] = drci(@@asmi("mov dh,cl")),                 // ld h,e
+    [0x64] = drci(@@asmi("mov dh,dh")),                 // ld h,h
+    [0x65] = drci(@@asmi("mov dh,dl")),                 // ld h,l
+    [0x66] = drci(@@asmi("mov dh,[edx]")),              // ld h,(hl)
+    [0x67] = drci(@@asmi("mov dh,al")),                 // ld h,a
+    [0x68] = drci(@@asmi("mov dl,bh")),                 // ld l,b
+    [0x69] = drci(@@asmi("mov dl,bl")),                 // ld l,c
+    [0x6a] = drci(@@asmi("mov dl,ch")),                 // ld l,d
+    [0x6b] = drci(@@asmi("mov dl,cl")),                 // ld l,e
+    [0x6c] = drci(@@asmi("mov dl,dh")),                 // ld l,h
+    [0x6d] = drci(@@asmi("mov dl,dl")),                 // ld l,l
+    [0x6e] = drci(@@asmi("mov dl,[edx]")),              // ld l,(hl)
+    [0x6f] = drci(@@asmi("mov dl,al")),                 // ld l,a
+    [0x70] = drci(@@asmi("mov [edx],bh")),              // ld (hl),b
+    [0x71] = drci(@@asmi("mov [edx],bl")),              // ld (hl),c
+    [0x72] = drci(@@asmi("mov [edx],ch")),              // ld (hl),d
+    [0x73] = drci(@@asmi("mov [edx],cl")),              // ld (hl),e
+    [0x74] = drci(@@asmi("mov [edx],dh")),              // ld (hl),h
+    [0x75] = drci(@@asmi("mov [edx],dl")),              // ld (hl),l
+    [0x77] = drci(@@asmi("mov [edx],al")),              // ld (hl),a
+    [0x78] = drci(@@asmi("mov al,bh")),                 // ld a,b
+    [0x79] = drci(@@asmi("mov al,bl")),                 // ld a,c
+    [0x7a] = drci(@@asmi("mov al,ch")),                 // ld a,d
+    [0x7b] = drci(@@asmi("mov al,cl")),                 // ld a,e
+    [0x7c] = drci(@@asmi("mov al,dh")),                 // ld a,h
+    [0x7d] = drci(@@asmi("mov al,dl")),                 // ld a,l
+    [0x7e] = drci(@@asmi("mov al,[edx]")),              // ld a,(hl)
+    [0x7f] = drci(@@asmi("mov al,al")),                 // ld a,a
+    [0x80] = drci(@@asmi("add al,bh")),                 // add a,b
+    [0x81] = drci(@@asmi("add al,bl")),                 // add a,c
+    [0x82] = drci(@@asmi("add al,ch")),                 // add a,d
+    [0x83] = drci(@@asmi("add al,cl")),                 // add a,e
+    [0x84] = drci(@@asmi("add al,dh")),                 // add a,h
+    [0x85] = drci(@@asmi("add al,dl")),                 // add a,l
+    [0x86] = drci(@@asmi("add al,[edx]")),              // add a,(hl)
+    [0x87] = drci(@@asmi("add al,al")),                 // add a,a
+    [0x88] = drci(@@asmi("adc al,bh")),                 // adc a,b
+    [0x89] = drci(@@asmi("adc al,bl")),                 // adc a,c
+    [0x8a] = drci(@@asmi("adc al,ch")),                 // adc a,d
+    [0x8b] = drci(@@asmi("adc al,cl")),                 // adc a,e
+    [0x8c] = drci(@@asmi("adc al,dh")),                 // adc a,h
+    [0x8d] = drci(@@asmi("adc al,dl")),                 // adc a,l
+    [0x8e] = drci(@@asmi("adc al,[edx]")),              // adc a,(hl)
+    [0x8f] = drci(@@asmi("adc al,al")),                 // adc a,a
+    [0x90] = drci(@@asmi("sub al,bh")),                 // sub a,b
+    [0x91] = drci(@@asmi("sub al,bl")),                 // sub a,c
+    [0x92] = drci(@@asmi("sub al,ch")),                 // sub a,d
+    [0x93] = drci(@@asmi("sub al,cl")),                 // sub a,e
+    [0x94] = drci(@@asmi("sub al,dh")),                 // sub a,h
+    [0x95] = drci(@@asmi("sub al,dl")),                 // sub a,l
+    [0x96] = drci(@@asmi("sub al,[edx]")),              // sub a,(hl)
+    [0x97] = drci(@@asmi("sub al,al")),                 // sub a,a
+    [0x98] = drci(@@asmi("sbb al,bh")),                 // sbc a,b
+    [0x99] = drci(@@asmi("sbb al,bl")),                 // sbc a,c
+    [0x9a] = drci(@@asmi("sbb al,ch")),                 // sbc a,d
+    [0x9b] = drci(@@asmi("sbb al,cl")),                 // sbc a,e
+    [0x9c] = drci(@@asmi("sbb al,dh")),                 // sbc a,h
+    [0x9d] = drci(@@asmi("sbb al,dl")),                 // sbc a,l
+    [0x9e] = drci(@@asmi("sbb al,[edx]")),              // sbc a,(hl)
+    [0x9f] = drci(@@asmi("sbb al,al")),                 // sbc a,a
 #ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0xA0] = 0xF820,        // and a,b = and al,bh
-    [0xA1] = 0xD820,        // and a,c = and al,bl
-    [0xA2] = 0xE820,        // and a,d = and al,ch
-    [0xA3] = 0xC820,        // and a,e = and al,cl
-    [0xA4] = 0xF020,        // and a,h = and al,dh
-    [0xA5] = 0xD020,        // and a,l = and al,dl
-    [0xA6] = 0x0222,        // and a,(hl) = and al,[edx]
-    [0xA7] = 0xC020,        // and a,a = and al,al
-    [0xA8] = 0xF830,        // xor a,b = xor al,bh
-    [0xA9] = 0xD830,        // xor a,c = xor al,bl
-    [0xAA] = 0xE830,        // xor a,d = xor al,ch
-    [0xAB] = 0xC830,        // xor a,e = xor al,cl
-    [0xAC] = 0xF030,        // xor a,h = xor al,dh
-    [0xAD] = 0xD030,        // xor a,l = xor al,dl
-    [0xAE] = 0x0232,        // xor a,(hl) = xor al,[edx]
-    [0xAF] = 0xC030,        // xor a,a = xor al,al
-    [0xB0] = 0xF808,        // or a,b = or al,bh
-    [0xB1] = 0xD808,        // or a,c = or al,bl
-    [0xB2] = 0xE808,        // or a,d = or al,ch
-    [0xB3] = 0xC808,        // or a,e = or al,cl
-    [0xB4] = 0xF008,        // or a,h = or al,dh
-    [0xB5] = 0xD008,        // or a,l = or al,dl
-    [0xB6] = 0x020A,        // or a,(hl) = or al,[edx]
-    [0xB7] = 0xC008,        // or a,a = or al,al
+    [0xa0] = drci(@@asmi("and al,bh")),                 // and a,b
+    [0xa1] = drci(@@asmi("and al,bl")),                 // and a,c
+    [0xa2] = drci(@@asmi("and al,ch")),                 // and a,d
+    [0xa3] = drci(@@asmi("and al,cl")),                 // and a,e
+    [0xa4] = drci(@@asmi("and al,dh")),                 // and a,h
+    [0xa5] = drci(@@asmi("and al,dl")),                 // and a,l
+    [0xa6] = drci(@@asmi("and al,[edx]")),              // and a,(hl)
+    [0xa7] = drci(@@asmi("and al,al")),                 // and a,a
+    [0xa8] = drci(@@asmi("xor al,bh")),                 // xor a,b
+    [0xa9] = drci(@@asmi("xor al,bl")),                 // xor a,c
+    [0xaa] = drci(@@asmi("xor al,ch")),                 // xor a,d
+    [0xab] = drci(@@asmi("xor al,cl")),                 // xor a,e
+    [0xac] = drci(@@asmi("xor al,dh")),                 // xor a,h
+    [0xad] = drci(@@asmi("xor al,dl")),                 // xor a,l
+    [0xae] = drci(@@asmi("xor al,[edx]")),              // xor a,(hl)
+    [0xaf] = drci(@@asmi("xor al,al")),                 // xor a,a
+    [0xb0] = drci(@@asmi("or al,bh")),                  // or a,b
+    [0xb1] = drci(@@asmi("or al,bl")),                  // or a,c
+    [0xb2] = drci(@@asmi("or al,ch")),                  // or a,d
+    [0xb3] = drci(@@asmi("or al,cl")),                  // or a,e
+    [0xb4] = drci(@@asmi("or al,dh")),                  // or a,h
+    [0xb5] = drci(@@asmi("or al,dl")),                  // or a,l
+    [0xb6] = drci(@@asmi("or al,[edx]")),               // or a,(hl)
+    [0xb7] = drci(@@asmi("or al,al")),                  // or a,a
+#else
+    [0xa0] = drci(@@asmi("and al,bh \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // and a,b
+    [0xa1] = drci(@@asmi("and al,bl \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // and a,c
+    [0xa2] = drci(@@asmi("and al,ch \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // and a,d
+    [0xa3] = drci(@@asmi("and al,cl \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // and a,e
+    [0xa4] = drci(@@asmi("and al,dh \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // and a,h
+    [0xa5] = drci(@@asmi("and al,dl \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // and a,l
+    [0xa6] = drci(@@asmi("and al,[edx] \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // and a,(hl)
+    [0xa7] = drci(@@asmi("and al,al \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // and a,a
+    [0xa8] = drci(@@asmi("xor al,bh \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // xor a,b
+    [0xa9] = drci(@@asmi("xor al,bl \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // xor a,c
+    [0xaa] = drci(@@asmi("xor al,ch \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // xor a,d
+    [0xab] = drci(@@asmi("xor al,cl \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // xor a,e
+    [0xac] = drci(@@asmi("xor al,dh \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // xor a,h
+    [0xad] = drci(@@asmi("xor al,dl \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // xor a,l
+    [0xae] = drci(@@asmi("xor al,[edx] \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // xor a,(hl)
+    [0xaf] = drci(@@asmi("xor al,al \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // xor a,a
+    [0xb0] = drci(@@asmi("or al,bh \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // or a,b
+    [0xb1] = drci(@@asmi("or al,bl \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // or a,c
+    [0xb2] = drci(@@asmi("or al,ch \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // or a,d
+    [0xb3] = drci(@@asmi("or al,cl \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // or a,e
+    [0xb4] = drci(@@asmi("or al,dh \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // or a,h
+    [0xb5] = drci(@@asmi("or al,dl \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // or a,l
+    [0xb6] = drci(@@asmi("or al,[edx] \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // or a,(hl)
+    [0xb7] = drci(@@asmi("or al,al \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf")), // or a,a
 #endif
-    [0xB8] = 0xF838,        // cp a,b = cmp al,bh
-    [0xB9] = 0xD838,        // cp a,c = cmp al,bl
-    [0xBA] = 0xE838,        // cp a,d = cmp al,ch
-    [0xBB] = 0xC838,        // cp a,e = cmp al,cl
-    [0xBC] = 0xF038,        // cp a,h = cmp al,dh
-    [0xBD] = 0xD038,        // cp a,l = cmp al,dl
-    [0xBE] = 0x023A,        // cp a,(hl) = cmp al,[edx]
-    [0xBF] = 0xC038,        // cp a,a = cmp al,al
-    [0xC6] = 0x0004,        // add a,n = add al,n
-    [0xCE] = 0x0014,        // adc a,n = adc al,n
-    [0xD6] = 0x002C,        // sub a,n = sub al,n
-    [0xDE] = 0x001C,        // sbc a,n = sbb al,n
+    [0xb8] = drci(@@asmi("cmp al,bh")),                 // cp a,b
+    [0xb9] = drci(@@asmi("cmp al,bl")),                 // cp a,c
+    [0xba] = drci(@@asmi("cmp al,ch")),                 // cp a,d
+    [0xbb] = drci(@@asmi("cmp al,cl")),                 // cp a,e
+    [0xbc] = drci(@@asmi("cmp al,dh")),                 // cp a,h
+    [0xbd] = drci(@@asmi("cmp al,dl")),                 // cp a,l
+    [0xbe] = drci(@@asmi("cmp al,[edx]")),              // cp a,(hl)
+    [0xbf] = drci(@@asmi("cmp al,al")),                 // cp a,a
+    [0xc1] = drci(@@asmi("mov bx,[ebp] \n lahf \n add bp,2 \n sahf")), // pop bc
+    [0xc5] = drci(@@asmi("lahf \n sub bp,2 \n sahf \n mov [ebp],bx")), // push bc
+    [0xc6] = drci_l(sizeof(uint8_t), @@asmi_with_offset("add al,0xff", [0xff])), // add al,n
+    [0xce] = drci_l(sizeof(uint8_t), @@asmi_with_offset("adc al,0xff", [0xff])), // adc al,n
+    [0xd1] = drci(@@asmi("mov cx,[ebp] \n lahf \n add bp,2 \n sahf")), // pop de
+    [0xd5] = drci(@@asmi("lahf \n sub bp,2 \n sahf \n mov [ebp],cx")), // push de
+    [0xd6] = drci_l(sizeof(uint8_t), @@asmi_with_offset("sub al,0xff", [0xff])), // sub al,n
+    [0xde] = drci_l(sizeof(uint8_t), @@asmi_with_offset("sbb al,0xff", [0xff])), // sbc al,n
+    [0xe1] = drci(@@asmi("mov dx,[ebp] \n lahf \n add bp,2 \n sahf")), // pop hl
+    [0xe5] = drci(@@asmi("lahf \n sub bp,2 \n sahf \n mov [ebp],dx")), // push hl
 #ifdef UNSAVE_FLAG_OPTIMIZATIONS
-    [0xE6] = 0x0024,        // and a,n = and al,n
-    [0xEE] = 0x0034,        // xor a,n = xor al,n
-    [0xF6] = 0x000C,        // or a,n = or al,n
+    [0xe6] = drci_l(sizeof(uint8_t), @@asmi_with_offset("and al,0xff", [0xff])), // and al,n
+    [0xee] = drci_l(sizeof(uint8_t), @@asmi_with_offset("xor al,0xff", [0xff])), // xor al,n
+    [0xf6] = drci_l(sizeof(uint8_t), @@asmi_with_offset("or al,0xff", [0xff])),  // or al,n
+    [0xf8] = drci_l(sizeof(uint8_t), @@asmi_with_offset("mov dx,bp \n add dx,-1", [0xff])), // ld hl,sp+n (sign-extended)
+#else
+    [0xe6] = drci_l(sizeof(uint8_t), @@asmi_with_offset("and al,0xff \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf", [0xff])), // and al,n
+    [0xee] = drci_l(sizeof(uint8_t), @@asmi_with_offset("xor al,0xff \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf", [0xff])), // xor al,n
+    [0xf6] = drci_l(sizeof(uint8_t), @@asmi_with_offset("or al,0xff \n lahf \n and ah,0x6a ; ZF \n or ah,0x10 ; AF \n sahf", [0xff])),  // or al,n
+    [0xf8] = drci_l(sizeof(uint8_t), @@asmi_with_offset("mov dx,bp \n add dx,-1 \n lahf \n and ah,0x3b ; keep AF and CF \n sahf", [0xff])), // ld hl,sp+n (sign-extended)
 #endif
-    [0xF9] = 0xD589,        // ld sp,hl = mov ebp,edx
-    [0xFE] = 0x003C         // cp a,n = cmp al,n
+    [0xf9] = drci(@@asmi("mov ebp,edx")),               // ld sp,hl
+    [0xfe] = drci_l(sizeof(uint8_t), @@asmi_with_offset("cmp al,0xff", [0xff])), // cp al,n
 };
 
 // Grundwerte für die bitweisen Funktionen test (v | 0x00), and (v | 0x20) und or (v | 0x08)

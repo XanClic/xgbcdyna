@@ -108,10 +108,12 @@ end
 def do_process_asmr(get_offset, *args)
     input = args.shift
 
-    IO.write('/tmp/.precompiler.asm', "use#{$bitness}\n" + input)
-    system('fasm /tmp/.precompiler.{asm,bin} &> /tmp/fasm-log') || die("FASM failed\n" + IO.read('/tmp/fasm-log'))
-    array = IO.read('/tmp/.precompiler.bin').unpack('C*')
-    system('rm -f /tmp/.precompiler.{asm,bin} /tmp/fasm-log')
+    pid = Process.pid
+
+    IO.write("/tmp/.precompiler.#{pid}.asm", "use#{$bitness}\n" + input)
+    system("fasm /tmp/.precompiler.#{pid}.{asm,bin} &> /tmp/.precompiler.#{pid}.fasm-log") || die("FASM failed\n" + IO.read("/tmp/.precompiler.#{pid}.fasm-log"))
+    array = IO.read("/tmp/.precompiler.#{pid}.bin").unpack('C*')
+    system("rm -f /tmp/.precompiler.#{pid}.{asm,bin,fasm-log}")
 
     while !args.empty?
         pattern = args.shift

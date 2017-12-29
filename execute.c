@@ -63,9 +63,17 @@ static exec_unit_t variable_eu;
 #define vmapp2(b, c, v) *((uint16_t *)&((b)[(c)])) = (v); (c) += 2
 #define vmapp4(b, c, v) *((uint32_t *)&((b)[(c)])) = (v); (c) += 4
 
-#include "dynarec/op-info.c"
-#include "dynarec/vm-exit.c"
-#include "dynarec/ops.c"
+static inline void vmappn(uint8_t *b, size_t *c, uint8_t *va, size_t size)
+{
+    memcpy(b + *c, va, size);
+    *c += size;
+}
+
+#include "dynarec/op-info.pc"
+#include "dynarec/vm-exit.pc"
+#include "dynarec/ops.pc"
+
+#define evmappn(...) vmappn(drc, &ei, __VA_ARGS__, sizeof(__VA_ARGS__))
 
 static void dynarec(exec_unit_t eu, uint16_t ip)
 {
@@ -146,244 +154,159 @@ static void dynarec(exec_unit_t eu, uint16_t ip)
     }
 #endif
 
-    if (need_regs & REG_AF)
-    {
-        // mov eax,[vm_fa]
-        drvmapp1(0xA1);
-        drvmapp4((uintptr_t)&vm_fa);
-        // sahf
-        drvmapp1(0x9E);
+    if (need_regs & REG_AF) {
+        drvmappn(@@asm("mov eax,[0x12345678] \n sahf", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&vm_fa"));
     }
-    if (need_regs & REG_BC)
-    {
-        // push ebx
-        drvmapp1(0x53);
-        // mov ebx,[vm_bc]
-        drvmapp2(0x1D8B);
-        drvmapp4((uintptr_t)&vm_bc);
+    if (need_regs & REG_BC) {
+        drvmappn(@@asm("push ebx \n mov ebx,[0x12345678]", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&vm_bc"));
     }
-    if (need_regs & REG_DE)
-    {
-        // mov ecx,[vm_de]
-        drvmapp2(0x0D8B);
-        drvmapp4((uintptr_t)&vm_de);
+    if (need_regs & REG_DE) {
+        drvmappn(@@asm("mov ecx,[0x12345678]", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&vm_de"));
     }
-    if (need_regs & REG_HL)
-    {
-        // mov edx,[vm_hl]
-        drvmapp2(0x158B);
-        drvmapp4((uintptr_t)&vm_hl);
+    if (need_regs & REG_HL) {
+        drvmappn(@@asm("mov edx,[0x12345678]", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&vm_hl"));
     }
-    if (need_regs & REG_SP)
-    {
-        // push ebp
-        drvmapp1(0x55);
-        // mov ebp,[vm_sp]
-        drvmapp2(0x2D8B);
-        drvmapp4((uintptr_t)&vm_sp);
+    if (need_regs & REG_SP) {
+        drvmappn(@@asm("push ebp \n mov ebp,[0x12345678]", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&vm_sp"));
     }
 
 
     size_t ei = CODE_EXITI;
-    if (need_regs & REG_SP)
-    {
-        // mov [vm_sp],ebp
-        vmapp2(drc, ei, 0x2D89);
-        vmapp4(drc, ei, (uintptr_t)&vm_sp);
-        // pop ebp
-        vmapp1(drc, ei, 0x5D);
+    if (need_regs & REG_SP) {
+        drvmappn(@@asm("mov ebp,[0x12345678]", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&vm_sp"));
+        evmappn(@@asm("mov [0x12345678],ebp \n pop ebp", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&vm_sp"));
     }
-    if (need_regs & REG_HL)
-    {
-        // mov [vm_hl],edx
-        vmapp2(drc, ei, 0x1589);
-        vmapp4(drc, ei, (uintptr_t)&vm_hl);
+    if (need_regs & REG_HL) {
+        evmappn(@@asm("mov [0x12345678],edx", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&vm_hl"));
     }
-    if (need_regs & REG_DE)
-    {
-        // mov [vm_de],ecx
-        vmapp2(drc, ei, 0x0D89);
-        vmapp4(drc, ei, (uintptr_t)&vm_de);
+    if (need_regs & REG_DE) {
+        evmappn(@@asm("mov [0x12345678],ecx", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&vm_de"));
     }
-    if (need_regs & REG_BC)
-    {
-        // mov [vm_bc],ebx
-        vmapp2(drc, ei, 0x1D89);
-        vmapp4(drc, ei, (uintptr_t)&vm_bc);
-        // pop ebx
-        vmapp1(drc, ei, 0x5B);
+    if (need_regs & REG_BC) {
+        evmappn(@@asm("mov [0x12345678],ebx \n pop ebx", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&vm_bc"));
     }
-    if (need_regs & REG_AF)
-    {
-        // lahf
-        vmapp2(drc, ei, 0xA39F);
-        // mov [vm_fa],eax
-        vmapp4(drc, ei, (uintptr_t)&vm_fa);
+    if (need_regs & REG_AF) {
+        evmappn(@@asm("lahf \n mov [0x12345678],eax", [0x78, 0x56, 0x34, 0x12], "(uintptr_t)&vm_fa"));
     }
-    // ret
-    vmapp1(drc, ei, 0xC3);
+    evmappn(@@asm("ret"));
 
 
 #ifndef REGISTER_EQUIVALENCE
     do_break = 0;
 #endif
 
-    while (!do_break)
-    {
+    while (!do_break) {
         op = MEM8(drip++);
 
-        if (likely(op != 0xCB))
-        {
-            if (compilability[op])
+        if (likely(op != 0xCB)) {
+            if (compilability[op]) {
                 dr_cycle_counter += cycles[op];
+            }
             do_break = break_on[op];
 
-            if (dynarec_table[op] != NULL)
+            if (dynarec_table[op] != NULL) {
                 dynarec_table[op]();
-            else
-            {
-                unsigned type = dynarec_const_length[op];
+            } else {
+                const struct DynarecConstInsn dci = dynarec_const_insns[op];
 
-                if (unlikely(type & DYNAREC_LOAD))
-                {
-                    if (likely(type == (2 | DYNAREC_LOAD)))
-                    {
-                        drvmapp1(dynarec_const[op]);
-                        drvmapp1(MEM8(drip++));
-                    }
-                    else if (likely(type == (4 | DYNAREC_LOAD)))
-                    {
-                        drvmapp2(dynarec_const[op]);
-                        drvmapp2(MEM16(drip));
+                if (unlikely(dci.length == 0)) {
+                    printf("%04X: Unbekannter Opcode %02X\n", drip - 1, op);
+                    FILE *d = fopen("/tmp/xgbcdyna-coredump", "w");
+                    fwrite(drc, 1, CODE_BUFSZ, d);
+                    fclose(d);
+                    exit(1);
+                }
+
+                memcpy(drc + dri, dci.data, dci.length);
+                if (unlikely(dci.load_length)) {
+                    if (dci.load_length == sizeof(uint8_t)) {
+                        drc[dri + dci.load_offset] = MEM8(drip++);
+                    } else if (likely(dci.load_length == sizeof(uint16_t))) {
+                        *(uint16_t *)&drc[dri + dci.load_offset] = MEM16(drip);
                         drip += 2;
-                    }
-                    else
-                    {
-                        printf("%04X: Unbekannter Opcode %02X\n", drip - 1, op);
-                        FILE *d = fopen("/tmp/xgbcdyna-coredump", "w");
-                        fwrite(drc, 1, CODE_BUFSZ, d);
-                        fclose(d);
-                        exit(1);
+                    } else {
+                        for (int i = 0; i < dci.load_length; i++) {
+                            drc[dri + dci.load_offset + i] = MEM8(drip++);
+                        }
                     }
                 }
-                else
-                {
-                    if (likely(dynarec_const_length[op] == (2 | DYNAREC_CNST)))
-                    {
-                        drvmapp2(dynarec_const[op]);
-                    }
-                    else if (likely(dynarec_const_length[op] == (4 | DYNAREC_CNST)))
-                    {
-                        drvmapp4(dynarec_const[op]);
-                    }
-                    else if (likely(dynarec_const_length[op] == (1 | DYNAREC_CNST)))
-                    {
-                        drvmapp1(dynarec_const[op]);
-                    }
-                    else
-                    {
-                        printf("%04X: Unbekannter Opcode %02X\n", drip - 1, op);
-                        FILE *d = fopen("/tmp/xgbcdyna-coredump", "w");
-                        fwrite(drc, 1, CODE_BUFSZ, d);
-                        fclose(d);
-                        exit(1);
-                    }
-                }
+                dri += dci.length;
             }
-        }
-        else
-        {
+        } else {
             pop = MEM8(drip++);
             dr_cycle_counter += cycles0xCB[pop];
 
             unsigned bval = 1 << ((pop & 0x38) >> 3);
             unsigned reg = pop & 0x07;
 
-            switch ((pop & 0xC0) >> 6)
-            {
+            switch ((pop & 0xC0) >> 6) {
                 case 0x01: // BIT
-                    // lahf
-                    drvmapp1(0x9F);
+                    drvmappn(@@asm("lahf"));
                     // test r,n
-                    if (reg == 7) // A aka al
+                    if (reg == 7) {
+                        // A aka al
                         drvmapp1(0xA8);
-                    else
-                    {
+                    } else {
                         drvmapp1(0xF6);
                         drvmapp1(dynarec_table_CBbit[reg]);
                     }
                     drvmapp1(bval);
 #ifndef UNSAVE_FLAG_OPTIMIZATIONS
-                    // push eax; mov al,ah; lahf
-                    drvmapp4(0x9FE08850);
-                    // and al,0x01 (CF behalten); and ah,0xFE (CF löschen)
-                    drvmapp4(0xE4800124);
-                    // ...
-                    drvmapp1(0xFE);
-                    // or al,0x10 (AF setzen); or ah,al
-                    drvmapp4(0xC408100C);
-                    // sahf; pop eax
-                    drvmapp2(0x589E);
+                    drvmappn(@@asm("push eax \n mov al,ah \n lahf"));
+                    // CF in al behalten und in ah löschen
+                    drvmappn(@@asm("and al,0x1 \n and ah,0xfe"));
+                    // AF in al setzen
+                    drvmappn(@@asm("or al,0x10 \n or ah,al"));
+                    drvmappn(@@asm("or ah,al \n sahf \n pop eax"));
 #endif
                     break;
                 case 0x02: // RES
-                    // lahf
-                    drvmapp1(0x9F);
+                    drvmappn(@@asm("lahf"));
                     // and r,n
-                    if (reg == 7) // A aka al
+                    if (reg == 7) { // A aka al
                         drvmapp1(0x24);
-                    else
-                    {
+                    } else {
                         drvmapp1(0x80);
                         drvmapp1(dynarec_table_CBbit[reg] | 0x20);
                     }
                     drvmapp1(~bval);
-                    // sahf
-                    drvmapp1(0x9E);
+                    drvmappn(@@asm("sahf"));
                     break;
                 case 0x03: // SET
-                    // lahf
-                    drvmapp1(0x9F);
+                    drvmappn(@@asm("lahf"));
                     // or r,n
-                    if (reg == 7) // A aka al
+                    if (reg == 7) { // A aka al
                         drvmapp1(0x0C);
-                    else
-                    {
+                    } else {
                         drvmapp1(0x80);
                         drvmapp1(dynarec_table_CBbit[reg] | 0x08);
                     }
                     drvmapp1(bval);
-                    // sahf
-                    drvmapp1(0x9E);
+                    drvmappn(@@asm("sahf"));
                     break;
                 default:
 #ifdef UNSAVE_FLAG_OPTIMIZATIONS
-                    if (unlikely(dynarec_table_CB[pop] != NULL))
+                    if (unlikely(dynarec_table_CB[pop] != NULL)) {
                         dynarec_table_CB[pop]();
-                    else if (likely(dynarec_const_CB[pop]))
-                    {
+                    } else if (likely(dynarec_const_CB[pop])) {
                         drvmapp2(dynarec_const_CB[pop]);
-                    }
 #else
-                    if (likely(dynarec_table_CB[pop] != NULL))
+                    if (likely(dynarec_table_CB[pop] != NULL)) {
                         dynarec_table_CB[pop]();
 #endif
-                    else
-                    {
+                    } else {
                         printf("%04X: Unbekannter Opcode CB %02X\n", drip - 2, pop);
                         exit(1);
                     }
             }
         }
 
-        if (unlikely(dr_cycle_counter >= MAX_CYCLES))
-        {
+        if (unlikely(dr_cycle_counter >= MAX_CYCLES)) {
             exit_vm(drc, &dri, drip, dr_cycle_counter);
             break;
         }
 
-        if ((drip & 0xC000) != start_area)
-        {
+        if ((drip & 0xC000) != start_area) {
             exit_vm(drc, &dri, drip, dr_cycle_counter);
             break;
         }

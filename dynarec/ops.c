@@ -660,327 +660,394 @@ static const struct DynarecConstInsn dynarec_const_insns[256] = {
     [0xfe] = drci_l(sizeof(uint8_t), @@asmi_with_offset("cmp al,0xff", [0xff])), // cp al,n
 };
 
-// Grundwerte für die bitweisen Funktionen test (v | 0x00), and (v | 0x20) und or (v | 0x08)
-static uint8_t dynarec_table_CBbit[7] = {
-    0xC7, // bit bh,n
-    0xC3, // bit bl,n
-    0xC5, // bit ch,n
-    0xC1, // bit cl,n
-    0xC6, // bit dh,n
-    0xC2, // bit dl,n
-    0x02  // bit byte [edx],n
-};
-
-#define def_drop_swap_r(r, rol, test) \
-    drop(swap_##r) \
-    { \
-        /* rol r,4 */ \
-        drvmapp2(rol); \
-        /* ...; test r,r; lahf */ \
-        drvmapp4(0x9F000004 | (test << 8)); \
-        /* and ah,0x40 (ZF); sahf */ \
-        drvmapp4(0x9E40E480); \
-    }
-
-def_drop_swap_r(b, 0xC7C0, 0xFF84)
-def_drop_swap_r(c, 0xC3C0, 0xDB84)
-def_drop_swap_r(d, 0xC5C0, 0xED84)
-def_drop_swap_r(e, 0xC1C0, 0xC984)
-def_drop_swap_r(h, 0xC6C0, 0xF684)
-def_drop_swap_r(l, 0xC2C0, 0xD284)
-def_drop_swap_r(a, 0xC0C0, 0xC084)
-
-drop(swap__hl)
-{
-    // rol byte [edx],4
-    drvmapp2(0x02C0);
-    // ...; cmp byte [edx],0
-    drvmapp4(0x003A8004);
-    // lahf; and ah,0x40
-    drvmapp4(0x40E4809F);
-    // sahf
-    drvmapp1(0x9E);
-}
-
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-#define def_drop_rX_r(d, reg, rcX, test) \
-    drop(r##d##_##reg) \
-    { \
-        /* rcX r,1; push eax; lahf */ \
-        drvmapp4(0x9F500000 | rcX); \
-        /* mov al,ah; and al,0x01 (CF) */ \
-        drvmapp4(0x0124E088); \
-        /* test r,r; lahf; and ah,0x6A (ZF) */ \
-        drvmapp4(0x809F0000 | test); \
-        /* ...; or ah,al */ \
-        drvmapp4(0xC4086AE4); \
-        /* sahf; pop eax */ \
-        drvmapp2(0x589E); \
-    }
-
-def_drop_rX_r(lc, b, 0xC7D0, 0xFF84)
-def_drop_rX_r(lc, c, 0xC3D0, 0xDB84)
-def_drop_rX_r(lc, d, 0xC5D0, 0xED84)
-def_drop_rX_r(lc, e, 0xC1D0, 0xC984)
-def_drop_rX_r(lc, h, 0xC6D0, 0xF684)
-def_drop_rX_r(lc, l, 0xC2D0, 0xD284)
-def_drop_rX_r(lc, a, 0xC0D0, 0xC084)
-
-def_drop_rX_r(rc, b, 0xCFD0, 0xFF84)
-def_drop_rX_r(rc, c, 0xCBD0, 0xDB84)
-def_drop_rX_r(rc, d, 0xCDD0, 0xED84)
-def_drop_rX_r(rc, e, 0xC9D0, 0xC984)
-def_drop_rX_r(rc, h, 0xCED0, 0xF684)
-def_drop_rX_r(rc, l, 0xCAD0, 0xD284)
-def_drop_rX_r(rc, a, 0xC8D0, 0xC084)
-
-def_drop_rX_r(l, b, 0xD7D0, 0xFF84)
-def_drop_rX_r(l, c, 0xD3D0, 0xDB84)
-def_drop_rX_r(l, d, 0xD5D0, 0xED84)
-def_drop_rX_r(l, e, 0xD1D0, 0xC984)
-def_drop_rX_r(l, h, 0xD6D0, 0xF684)
-def_drop_rX_r(l, l, 0xD2D0, 0xD284)
-def_drop_rX_r(l, a, 0xD0D0, 0xC084)
-
-def_drop_rX_r(r, b, 0xDFD0, 0xFF84)
-def_drop_rX_r(r, c, 0xDBD0, 0xDB84)
-def_drop_rX_r(r, d, 0xDDD0, 0xED84)
-def_drop_rX_r(r, e, 0xD9D0, 0xC984)
-def_drop_rX_r(r, h, 0xDED0, 0xF684)
-def_drop_rX_r(r, l, 0xDAD0, 0xD284)
-def_drop_rX_r(r, a, 0xD8D0, 0xC084)
-
-drop(rlc__hl)
-{
-    // rol byte [edx],1; push eax; lahf
-    drvmapp4(0x9F5002D0);
-    // mov al,ah; and al,0x01 (CF)
-    drvmapp4(0x0124E088);
-    // cmp byte [edx],0; lahf
-    drvmapp4(0x9F003A80);
-    // and ah,0x6A (ZF); or ah,al
-    drvmapp4(0x086AE480);
-    // ...; sahf
-    drvmapp2(0x9EC4);
-    // pop eax
-    drvmapp1(0x58);
-}
-
-drop(rrc__hl)
-{
-    // ror byte [edx],1; push eax; lahf
-    drvmapp4(0x9F500AD0);
-    // mov al,ah; and al,0x01 (CF)
-    drvmapp4(0x0124E088);
-    // cmp byte [edx],0; lahf
-    drvmapp4(0x9F003A80);
-    // and ah,0x6A (ZF); or ah,al
-    drvmapp4(0x086AE480);
-    // ...; sahf
-    drvmapp2(0x9EC4);
-    // pop eax
-    drvmapp1(0x58);
-}
-
-drop(rl__hl)
-{
-    // rcl byte [edx],1; push eax; lahf
-    drvmapp4(0x9F5012D0);
-    // mov al,ah; and al,0x01 (CF)
-    drvmapp4(0x0124E088);
-    // cmp byte [edx],0; lahf
-    drvmapp4(0x9F003A80);
-    // and ah,0x6A (ZF); or ah,al
-    drvmapp4(0x086AE480);
-    // ...; sahf
-    drvmapp2(0x9EC4);
-    // pop eax
-    drvmapp1(0x58);
-}
-
-drop(rr__hl)
-{
-    // rcr byte [edx],1; push eax; lahf
-    drvmapp4(0x9F501AD0);
-    // mov al,ah; and al,0x01 (CF)
-    drvmapp4(0x0124E088);
-    // cmp byte [edx],0; lahf
-    drvmapp4(0x9F003A80);
-    // and ah,0x6A (ZF); or ah,al
-    drvmapp4(0x086AE480);
-    // ...; sahf
-    drvmapp2(0x9EC4);
-    // pop eax
-    drvmapp1(0x58);
-}
-
-#define def_drop_sXX_r(da, r, sXX) \
-    drop(s##da##_##r) \
-    { \
-        /* sXX r,1 */ \
-        drvmapp2(sXX); \
-        /* lahf */ \
-        drvmapp1(0x9F); \
-        /* and ah,0xEF (AF löschen); sahf */ \
-        drvmapp4(0x9EEFE480); \
-    }
-
-def_drop_sXX_r(la,   b, 0xE7D0) // shl bh,1
-def_drop_sXX_r(la,   c, 0xE3D0) // shl bl,1
-def_drop_sXX_r(la,   d, 0xE5D0) // shl ch,1
-def_drop_sXX_r(la,   e, 0xE1D0) // shl cl,1
-def_drop_sXX_r(la,   h, 0xE6D0) // shl dh,1
-def_drop_sXX_r(la,   l, 0xE2D0) // shl dl,1
-def_drop_sXX_r(la, _hl, 0x22D0) // shl byte [edx],1
-def_drop_sXX_r(la,   a, 0xE0D0) // shl al,1
-
-def_drop_sXX_r(ra,   b, 0xFFD0) // sar bh,1
-def_drop_sXX_r(ra,   c, 0xFBD0) // sar bl,1
-def_drop_sXX_r(ra,   d, 0xFDD0) // sar ch,1
-def_drop_sXX_r(ra,   e, 0xF9D0) // sar cl,1
-def_drop_sXX_r(ra,   h, 0xFED0) // sar dh,1
-def_drop_sXX_r(ra,   l, 0xFAD0) // sar dl,1
-def_drop_sXX_r(ra, _hl, 0x3AD0) // sar byte [edx],1
-def_drop_sXX_r(ra,   a, 0xF8D0) // sar al,1
-
-def_drop_sXX_r(rl,   b, 0xEFD0) // shr bh,1
-def_drop_sXX_r(rl,   c, 0xEBD0) // shr bl,1
-def_drop_sXX_r(rl,   d, 0xEDD0) // shr ch,1
-def_drop_sXX_r(rl,   e, 0xE9D0) // shr cl,1
-def_drop_sXX_r(rl,   h, 0xEED0) // shr dh,1
-def_drop_sXX_r(rl,   l, 0xEAD0) // shr dl,1
-def_drop_sXX_r(rl, _hl, 0x2AD0) // shr byte [edx],1
-def_drop_sXX_r(rl,   a, 0xE8D0) // shr al,1
-#endif
-
-static void (*const dynarec_table_CB[64])(void) = {
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-    dran(0x00, rlc_b),
-    dran(0x01, rlc_c),
-    dran(0x02, rlc_d),
-    dran(0x03, rlc_e),
-    dran(0x04, rlc_h),
-    dran(0x05, rlc_l),
-    dran(0x06, rlc__hl),
-    dran(0x07, rlc_a),
-    dran(0x08, rrc_b),
-    dran(0x09, rrc_c),
-    dran(0x0A, rrc_d),
-    dran(0x0B, rrc_e),
-    dran(0x0C, rrc_h),
-    dran(0x0D, rrc_l),
-    dran(0x0E, rrc__hl),
-    dran(0x0F, rrc_a),
-    dran(0x10, rl_b),
-    dran(0x11, rl_c),
-    dran(0x12, rl_d),
-    dran(0x13, rl_e),
-    dran(0x14, rl_h),
-    dran(0x15, rl_l),
-    dran(0x16, rl__hl),
-    dran(0x17, rl_a),
-    dran(0x18, rr_b),
-    dran(0x19, rr_c),
-    dran(0x1A, rr_d),
-    dran(0x1B, rr_e),
-    dran(0x1C, rr_h),
-    dran(0x1D, rr_l),
-    dran(0x1E, rr__hl),
-    dran(0x1F, rr_a),
-    dran(0x20, sla_b),
-    dran(0x21, sla_c),
-    dran(0x22, sla_d),
-    dran(0x23, sla_e),
-    dran(0x24, sla_h),
-    dran(0x25, sla_l),
-    dran(0x26, sla__hl),
-    dran(0x27, sla_a),
-    dran(0x28, sra_b),
-    dran(0x29, sra_c),
-    dran(0x2A, sra_d),
-    dran(0x2B, sra_e),
-    dran(0x2C, sra_h),
-    dran(0x2D, sra_l),
-    dran(0x2E, sra__hl),
-    dran(0x2F, sra_a),
-#endif
-    dran(0x30, swap_b),
-    dran(0x31, swap_c),
-    dran(0x32, swap_d),
-    dran(0x33, swap_e),
-    dran(0x34, swap_h),
-    dran(0x35, swap_l),
-    dran(0x36, swap__hl),
-    dran(0x37, swap_a),
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-    dran(0x38, srl_b),
-    dran(0x39, srl_c),
-    dran(0x3A, srl_d),
-    dran(0x3B, srl_e),
-    dran(0x3C, srl_h),
-    dran(0x3D, srl_l),
-    dran(0x3E, srl__hl),
-    dran(0x3F, srl_a)
-#endif
-};
-
+static const struct DynarecConstInsn dynarec_const_cb_insns[256] = {
 #ifdef UNSAVE_FLAG_OPTIMIZATIONS
-static uint16_t dynarec_const_CB[64] = {
-    [0x00] = 0xC7D0,        // rlc b = rol bh,1
-    [0x01] = 0xC3D0,        // rlc c = rol bl,1
-    [0x02] = 0xC5D0,        // rlc d = rol ch,1
-    [0x03] = 0xC1D0,        // rlc e = rol cl,1
-    [0x04] = 0xC6D0,        // rlc h = rol dh,1
-    [0x05] = 0xC2D0,        // rlc l = rol dl,1
-    [0x06] = 0x02D0,        // rlc (hl) = rol byte [edx],1
-    [0x07] = 0xC0D0,        // rlc a = rol al,1
-    [0x08] = 0xCFD0,        // rrc b = ror bh,1
-    [0x09] = 0xCBD0,        // rrc c = ror bl,1
-    [0x0A] = 0xCDD0,        // rrc d = ror ch,1
-    [0x0B] = 0xC9D0,        // rrc e = ror cl,1
-    [0x0C] = 0xCED0,        // rrc h = ror dh,1
-    [0x0D] = 0xCAD0,        // rrc l = ror dl,1
-    [0x0E] = 0x0AD0,        // rrc (hl) = ror byte [edx],1
-    [0x0F] = 0xC8D0,        // rrc a = ror al,1
-    [0x10] = 0xD7D0,        // rl b = rcl bh,1
-    [0x11] = 0xD3D0,        // rl c = rcl bl,1
-    [0x12] = 0xD5D0,        // rl d = rcl ch,1
-    [0x13] = 0xD1D0,        // rl e = rcl cl,1
-    [0x14] = 0xD6D0,        // rl h = rcl dh,1
-    [0x15] = 0xD2D0,        // rl l = rcl dl,1
-    [0x16] = 0x12D0,        // rl (hl) = rcl byte [edx],1
-    [0x17] = 0xD0D0,        // rl a = rcl al,1
-    [0x18] = 0xDFD0,        // rr b = rcr bh,1
-    [0x19] = 0xDBD0,        // rr c = rcr bl,1
-    [0x1A] = 0xDDD0,        // rr d = rcr ch,1
-    [0x1B] = 0xD9D0,        // rr e = rcr cl,1
-    [0x1C] = 0xDED0,        // rr h = rcr dh,1
-    [0x1D] = 0xDAD0,        // rr l = rcr dl,1
-    [0x1E] = 0x1AD0,        // rr (hl) = rcr byte [edx],1
-    [0x1F] = 0xD8D0,        // rr a = rcr al,1
-    [0x20] = 0xE7D0,        // sla b = shl bh,1
-    [0x21] = 0xE3D0,        // sla c = shl bl,1
-    [0x22] = 0xE5D0,        // sla d = shl ch,1
-    [0x23] = 0xE1D0,        // sla e = shl cl,1
-    [0x24] = 0xE6D0,        // sla h = shl dh,1
-    [0x25] = 0xE2D0,        // sla l = shl dl,1
-    [0x26] = 0x22D0,        // sla (hl) = shl byte [edx],1
-    [0x27] = 0xE0D0,        // sla a = shl al,1
-    [0x28] = 0xFFD0,        // sra b = sar bh,1
-    [0x29] = 0xFBD0,        // sra c = sar bl,1
-    [0x2A] = 0xFDD0,        // sra d = sar ch,1
-    [0x2B] = 0xF9D0,        // sra e = sar cl,1
-    [0x2C] = 0xFED0,        // sra h = sar dh,1
-    [0x2D] = 0xFAD0,        // sra l = sar dl,1
-    [0x2E] = 0x3AD0,        // sra (hl) = sar byte [edx],1
-    [0x2F] = 0xF8D0,        // sra a = sar al,1
-    [0x38] = 0xEFD0,        // srl b = shr bh,1
-    [0x39] = 0xEBD0,        // srl c = shr bl,1
-    [0x3A] = 0xEDD0,        // srl d = shr ch,1
-    [0x3B] = 0xE9D0,        // srl e = shr cl,1
-    [0x3C] = 0xEED0,        // srl h = shr dh,1
-    [0x3D] = 0xEAD0,        // srl l = shr dl,1
-    [0x3E] = 0x2AD0,        // srl (hl) = shr byte [edx],1
-    [0x3F] = 0xE8D0,        // srl a = shr al,1
-};
+    [0x00] = drci(@@asmi("rol bh,1")),           // rlc b
+    [0x01] = drci(@@asmi("rol bl,1")),           // rlc c
+    [0x02] = drci(@@asmi("rol ch,1")),           // rlc d
+    [0x03] = drci(@@asmi("rol cl,1")),           // rlc e
+    [0x04] = drci(@@asmi("rol dh,1")),           // rlc h
+    [0x05] = drci(@@asmi("rol dl,1")),           // rlc l
+    [0x06] = drci(@@asmi("rol byte [edx],1")),   // rlc (hl)
+    [0x07] = drci(@@asmi("rol al,1")),           // rlc a
+    [0x08] = drci(@@asmi("ror bh,1")),           // rrc b
+    [0x09] = drci(@@asmi("ror bl,1")),           // rrc c
+    [0x0a] = drci(@@asmi("ror ch,1")),           // rrc d
+    [0x0b] = drci(@@asmi("ror cl,1")),           // rrc e
+    [0x0c] = drci(@@asmi("ror dh,1")),           // rrc h
+    [0x0d] = drci(@@asmi("ror dl,1")),           // rrc l
+    [0x0e] = drci(@@asmi("ror byte [edx],1")),   // rrc (hl)
+    [0x0f] = drci(@@asmi("ror al,1")),           // rrc a
+    [0x10] = drci(@@asmi("rcl bh,1")),           // rl b
+    [0x11] = drci(@@asmi("rcl bl,1")),           // rl c
+    [0x12] = drci(@@asmi("rcl ch,1")),           // rl d
+    [0x13] = drci(@@asmi("rcl cl,1")),           // rl e
+    [0x14] = drci(@@asmi("rcl dh,1")),           // rl h
+    [0x15] = drci(@@asmi("rcl dl,1")),           // rl l
+    [0x16] = drci(@@asmi("rcl byte [edx],1")),   // rl (hl)
+    [0x17] = drci(@@asmi("rcl al,1")),           // rl a
+    [0x18] = drci(@@asmi("rcr bh,1")),           // rr b
+    [0x19] = drci(@@asmi("rcr bl,1")),           // rr c
+    [0x1a] = drci(@@asmi("rcr ch,1")),           // rr d
+    [0x1b] = drci(@@asmi("rcr cl,1")),           // rr e
+    [0x1c] = drci(@@asmi("rcr dh,1")),           // rr h
+    [0x1d] = drci(@@asmi("rcr dl,1")),           // rr l
+    [0x1e] = drci(@@asmi("rcr byte [edx],1")),   // rr (hl)
+    [0x1f] = drci(@@asmi("rcr al,1")),           // rr a
+    [0x20] = drci(@@asmi("sal bh,1")),           // sla b
+    [0x21] = drci(@@asmi("sal bl,1")),           // sla c
+    [0x22] = drci(@@asmi("sal ch,1")),           // sla d
+    [0x23] = drci(@@asmi("sal cl,1")),           // sla e
+    [0x24] = drci(@@asmi("sal dh,1")),           // sla h
+    [0x25] = drci(@@asmi("sal dl,1")),           // sla l
+    [0x26] = drci(@@asmi("sal byte [edx],1")),   // sla (hl)
+    [0x27] = drci(@@asmi("sal al,1")),           // sla a
+    [0x28] = drci(@@asmi("sar bh,1")),           // sra b
+    [0x29] = drci(@@asmi("sar bl,1")),           // sra c
+    [0x2a] = drci(@@asmi("sar ch,1")),           // sra d
+    [0x2b] = drci(@@asmi("sar cl,1")),           // sra e
+    [0x2c] = drci(@@asmi("sar dh,1")),           // sra h
+    [0x2d] = drci(@@asmi("sar dl,1")),           // sra l
+    [0x2e] = drci(@@asmi("sar byte [edx],1")),   // sra (hl)
+    [0x2f] = drci(@@asmi("sar al,1")),           // sra a
+#else
+    [0x00] = drci(@@asmi("rol bh,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test bh,bh \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rlc b
+    [0x01] = drci(@@asmi("rol bl,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test bl,bl \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rlc c
+    [0x02] = drci(@@asmi("rol ch,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test ch,ch \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rlc d
+    [0x03] = drci(@@asmi("rol cl,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test cl,cl \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rlc e
+    [0x04] = drci(@@asmi("rol dh,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test dh,dh \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rlc h
+    [0x05] = drci(@@asmi("rol dl,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test dl,dl \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rlc l
+    [0x06] = drci(@@asmi("rol byte [edx],1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n cmp byte [edx],0 \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rlc (hl)
+    [0x07] = drci(@@asmi("rol al,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test al,al \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rlc a
+    [0x08] = drci(@@asmi("ror bh,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test bh,bh \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rrc b
+    [0x09] = drci(@@asmi("ror bl,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test bl,bl \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rrc c
+    [0x0a] = drci(@@asmi("ror ch,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test ch,ch \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rrc d
+    [0x0b] = drci(@@asmi("ror cl,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test cl,cl \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rrc e
+    [0x0c] = drci(@@asmi("ror dh,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test dh,dh \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rrc h
+    [0x0d] = drci(@@asmi("ror dl,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test dl,dl \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rrc l
+    [0x0e] = drci(@@asmi("ror byte [edx],1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n cmp byte [edx],0 \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rrc (hl)
+    [0x0f] = drci(@@asmi("ror al,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test al,al \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rrc a
+    [0x10] = drci(@@asmi("rcl bh,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test bh,bh \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rl b
+    [0x11] = drci(@@asmi("rcl bl,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test bl,bl \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rl c
+    [0x12] = drci(@@asmi("rcl ch,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test ch,ch \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rl d
+    [0x13] = drci(@@asmi("rcl cl,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test cl,cl \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rl e
+    [0x14] = drci(@@asmi("rcl dh,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test dh,dh \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rl h
+    [0x15] = drci(@@asmi("rcl dl,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test dl,dl \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rl l
+    [0x16] = drci(@@asmi("rcl byte [edx],1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n cmp byte [edx],0 \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rl (hl)
+    [0x17] = drci(@@asmi("rcl al,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test al,al \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rl a
+    [0x18] = drci(@@asmi("rcr bh,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test bh,bh \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rr b
+    [0x19] = drci(@@asmi("rcr bl,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test bl,bl \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rr c
+    [0x1a] = drci(@@asmi("rcr ch,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test ch,ch \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rr d
+    [0x1b] = drci(@@asmi("rcr cl,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test cl,cl \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rr e
+    [0x1c] = drci(@@asmi("rcr dh,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test dh,dh \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rr h
+    [0x1d] = drci(@@asmi("rcr dl,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test dl,dl \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rr l
+    [0x1e] = drci(@@asmi("rcr byte [edx],1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n cmp byte [edx],0 \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rr (hl)
+    [0x1f] = drci(@@asmi("rcr al,1 \n push eax \n lahf \n mov al,ah \n and al,0x01 ; CF \n test al,al \n lahf \n and ah,0x6a ; ZF \n or ah,al \n sahf \n pop eax")), // rr a
+    [0x20] = drci(@@asmi("sal bh,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sla b
+    [0x21] = drci(@@asmi("sal bl,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sla c
+    [0x22] = drci(@@asmi("sal ch,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sla d
+    [0x23] = drci(@@asmi("sal cl,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sla e
+    [0x24] = drci(@@asmi("sal dh,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sla h
+    [0x25] = drci(@@asmi("sal dl,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sla l
+    [0x26] = drci(@@asmi("sal byte [edx],1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sla (hl)
+    [0x27] = drci(@@asmi("sal al,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sla a
+    [0x28] = drci(@@asmi("sar bh,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sra b
+    [0x29] = drci(@@asmi("sar bl,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sra c
+    [0x2a] = drci(@@asmi("sar ch,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sra d
+    [0x2b] = drci(@@asmi("sar cl,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sra e
+    [0x2c] = drci(@@asmi("sar dh,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sra h
+    [0x2d] = drci(@@asmi("sar dl,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sra l
+    [0x2e] = drci(@@asmi("sar byte [edx],1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sra (hl)
+    [0x2f] = drci(@@asmi("sar al,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // sra a
 #endif
+    [0x30] = drci(@@asmi("rol bh,4 \n test bh,bh \n lahf \n and ah,0x40 ; ZF \n sahf")), // swap b
+    [0x31] = drci(@@asmi("rol bl,4 \n test bl,bl \n lahf \n and ah,0x40 ; ZF \n sahf")), // swap c
+    [0x32] = drci(@@asmi("rol ch,4 \n test ch,ch \n lahf \n and ah,0x40 ; ZF \n sahf")), // swap d
+    [0x33] = drci(@@asmi("rol cl,4 \n test cl,cl \n lahf \n and ah,0x40 ; ZF \n sahf")), // swap e
+    [0x34] = drci(@@asmi("rol dh,4 \n test dh,dh \n lahf \n and ah,0x40 ; ZF \n sahf")), // swap h
+    [0x35] = drci(@@asmi("rol dl,4 \n test dl,dl \n lahf \n and ah,0x40 ; ZF \n sahf")), // swap l
+    [0x36] = drci(@@asmi("rol byte [edx],4 \n cmp byte [edx],0 \n lahf \n and ah,0x40 ; ZF \n sahf")), // swap (hl)
+    [0x37] = drci(@@asmi("rol al,4 \n test al,al \n lahf \n and ah,0x40 ; ZF \n sahf")), // swap a
+#ifdef UNSAVE_FLAG_OPTIMIZATIONS
+    [0x38] = drci(@@asmi("shr bh,1")),           // srl b
+    [0x39] = drci(@@asmi("shr bl,1")),           // srl c
+    [0x3a] = drci(@@asmi("shr ch,1")),           // srl d
+    [0x3b] = drci(@@asmi("shr cl,1")),           // srl e
+    [0x3c] = drci(@@asmi("shr dh,1")),           // srl h
+    [0x3d] = drci(@@asmi("shr dl,1")),           // srl l
+    [0x3e] = drci(@@asmi("shr byte [edx],1")),   // srl (hl)
+    [0x3f] = drci(@@asmi("shr al,1")),           // srl a
+#else
+    [0x38] = drci(@@asmi("shr bh,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // srl b
+    [0x39] = drci(@@asmi("shr bl,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // srl c
+    [0x3a] = drci(@@asmi("shr ch,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // srl d
+    [0x3b] = drci(@@asmi("shr cl,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // srl e
+    [0x3c] = drci(@@asmi("shr dh,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // srl h
+    [0x3d] = drci(@@asmi("shr dl,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // srl l
+    [0x3e] = drci(@@asmi("shr byte [edx],1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // srl (hl)
+    [0x3f] = drci(@@asmi("shr al,1 \n lahf \n and ah,0xef ; clear AF \n sahf")), // srl a
+#endif
+
+    // lol why did i de-generalize this
+#ifdef UNSAVE_FLAG_OPTIMIZATIONS
+    [0x40] = drci(@@asmi("test bh,0x01")),      // bit 0,b
+    [0x41] = drci(@@asmi("test bl,0x01")),      // bit 0,c
+    [0x42] = drci(@@asmi("test ch,0x01")),      // bit 0,d
+    [0x43] = drci(@@asmi("test cl,0x01")),      // bit 0,e
+    [0x44] = drci(@@asmi("test dh,0x01")),      // bit 0,h
+    [0x45] = drci(@@asmi("test dl,0x01")),      // bit 0,l
+    [0x46] = drci(@@asmi("test byte [edx],0x01")), // bit 0,(hl)
+    [0x47] = drci(@@asmi("test al,0x01")),      // bit 0,a
+    [0x48] = drci(@@asmi("test bh,0x02")),      // bit 1,b
+    [0x49] = drci(@@asmi("test bl,0x02")),      // bit 1,c
+    [0x4a] = drci(@@asmi("test ch,0x02")),      // bit 1,d
+    [0x4b] = drci(@@asmi("test cl,0x02")),      // bit 1,e
+    [0x4c] = drci(@@asmi("test dh,0x02")),      // bit 1,h
+    [0x4d] = drci(@@asmi("test dl,0x02")),      // bit 1,l
+    [0x4e] = drci(@@asmi("test byte [edx],0x02")), // bit 1,(hl)
+    [0x4f] = drci(@@asmi("test al,0x02")),      // bit 1,a
+    [0x50] = drci(@@asmi("test bh,0x04")),      // bit 2,b
+    [0x51] = drci(@@asmi("test bl,0x04")),      // bit 2,c
+    [0x52] = drci(@@asmi("test ch,0x04")),      // bit 2,d
+    [0x53] = drci(@@asmi("test cl,0x04")),      // bit 2,e
+    [0x54] = drci(@@asmi("test dh,0x04")),      // bit 2,h
+    [0x55] = drci(@@asmi("test dl,0x04")),      // bit 2,l
+    [0x56] = drci(@@asmi("test byte [edx],0x04")), // bit 2,(hl)
+    [0x57] = drci(@@asmi("test al,0x04")),      // bit 2,a
+    [0x58] = drci(@@asmi("test bh,0x08")),      // bit 3,b
+    [0x59] = drci(@@asmi("test bl,0x08")),      // bit 3,c
+    [0x5a] = drci(@@asmi("test ch,0x08")),      // bit 3,d
+    [0x5b] = drci(@@asmi("test cl,0x08")),      // bit 3,e
+    [0x5c] = drci(@@asmi("test dh,0x08")),      // bit 3,h
+    [0x5d] = drci(@@asmi("test dl,0x08")),      // bit 3,l
+    [0x5e] = drci(@@asmi("test byte [edx],0x08")), // bit 3,(hl)
+    [0x5f] = drci(@@asmi("test al,0x08")),      // bit 3,a
+    [0x60] = drci(@@asmi("test bh,0x10")),      // bit 4,b
+    [0x61] = drci(@@asmi("test bl,0x10")),      // bit 4,c
+    [0x62] = drci(@@asmi("test ch,0x10")),      // bit 4,d
+    [0x63] = drci(@@asmi("test cl,0x10")),      // bit 4,e
+    [0x64] = drci(@@asmi("test dh,0x10")),      // bit 4,h
+    [0x65] = drci(@@asmi("test dl,0x10")),      // bit 4,l
+    [0x66] = drci(@@asmi("test byte [edx],0x10")), // bit 4,(hl)
+    [0x67] = drci(@@asmi("test al,0x10")),      // bit 4,a
+    [0x68] = drci(@@asmi("test bh,0x20")),      // bit 5,b
+    [0x69] = drci(@@asmi("test bl,0x20")),      // bit 5,c
+    [0x6a] = drci(@@asmi("test ch,0x20")),      // bit 5,d
+    [0x6b] = drci(@@asmi("test cl,0x20")),      // bit 5,e
+    [0x6c] = drci(@@asmi("test dh,0x20")),      // bit 5,h
+    [0x6d] = drci(@@asmi("test dl,0x20")),      // bit 5,l
+    [0x6e] = drci(@@asmi("test byte [edx],0x20")), // bit 5,(hl)
+    [0x6f] = drci(@@asmi("test al,0x20")),      // bit 5,a
+    [0x70] = drci(@@asmi("test bh,0x40")),      // bit 6,b
+    [0x71] = drci(@@asmi("test bl,0x40")),      // bit 6,c
+    [0x72] = drci(@@asmi("test ch,0x40")),      // bit 6,d
+    [0x73] = drci(@@asmi("test cl,0x40")),      // bit 6,e
+    [0x74] = drci(@@asmi("test dh,0x40")),      // bit 6,h
+    [0x75] = drci(@@asmi("test dl,0x40")),      // bit 6,l
+    [0x76] = drci(@@asmi("test byte [edx],0x40")), // bit 6,(hl)
+    [0x77] = drci(@@asmi("test al,0x40")),      // bit 6,a
+    [0x78] = drci(@@asmi("test bh,0x80")),      // bit 7,b
+    [0x79] = drci(@@asmi("test bl,0x80")),      // bit 7,c
+    [0x7a] = drci(@@asmi("test ch,0x80")),      // bit 7,d
+    [0x7b] = drci(@@asmi("test cl,0x80")),      // bit 7,e
+    [0x7c] = drci(@@asmi("test dh,0x80")),      // bit 7,h
+    [0x7d] = drci(@@asmi("test dl,0x80")),      // bit 7,l
+    [0x7e] = drci(@@asmi("test byte [edx],0x80")), // bit 7,(hl)
+    [0x7f] = drci(@@asmi("test al,0x80")),      // bit 7,a
+#else
+    [0x40] = drci(@@asmi("lahf \n test bh,0x01 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 0,b
+    [0x41] = drci(@@asmi("lahf \n test bl,0x01 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 0,c
+    [0x42] = drci(@@asmi("lahf \n test ch,0x01 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 0,d
+    [0x43] = drci(@@asmi("lahf \n test cl,0x01 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 0,e
+    [0x44] = drci(@@asmi("lahf \n test dh,0x01 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 0,h
+    [0x45] = drci(@@asmi("lahf \n test dl,0x01 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 0,l
+    [0x46] = drci(@@asmi("lahf \n test byte [edx],0x01 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 0,(hl)
+    [0x47] = drci(@@asmi("lahf \n test al,0x01 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 0,a
+    [0x48] = drci(@@asmi("lahf \n test bh,0x02 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 1,b
+    [0x49] = drci(@@asmi("lahf \n test bl,0x02 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 1,c
+    [0x4a] = drci(@@asmi("lahf \n test ch,0x02 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 1,d
+    [0x4b] = drci(@@asmi("lahf \n test cl,0x02 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 1,e
+    [0x4c] = drci(@@asmi("lahf \n test dh,0x02 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 1,h
+    [0x4d] = drci(@@asmi("lahf \n test dl,0x02 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 1,l
+    [0x4e] = drci(@@asmi("lahf \n test byte [edx],0x02 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 1,(hl)
+    [0x4f] = drci(@@asmi("lahf \n test al,0x02 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 1,a
+    [0x50] = drci(@@asmi("lahf \n test bh,0x04 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 2,b
+    [0x51] = drci(@@asmi("lahf \n test bl,0x04 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 2,c
+    [0x52] = drci(@@asmi("lahf \n test ch,0x04 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 2,d
+    [0x53] = drci(@@asmi("lahf \n test cl,0x04 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 2,e
+    [0x54] = drci(@@asmi("lahf \n test dh,0x04 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 2,h
+    [0x55] = drci(@@asmi("lahf \n test dl,0x04 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 2,l
+    [0x56] = drci(@@asmi("lahf \n test byte [edx],0x04 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 2,(hl)
+    [0x57] = drci(@@asmi("lahf \n test al,0x04 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 2,a
+    [0x58] = drci(@@asmi("lahf \n test bh,0x08 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 3,b
+    [0x59] = drci(@@asmi("lahf \n test bl,0x08 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 3,c
+    [0x5a] = drci(@@asmi("lahf \n test ch,0x08 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 3,d
+    [0x5b] = drci(@@asmi("lahf \n test cl,0x08 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 3,e
+    [0x5c] = drci(@@asmi("lahf \n test dh,0x08 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 3,h
+    [0x5d] = drci(@@asmi("lahf \n test dl,0x08 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 3,l
+    [0x5e] = drci(@@asmi("lahf \n test byte [edx],0x08 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 3,(hl)
+    [0x5f] = drci(@@asmi("lahf \n test al,0x08 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 3,a
+    [0x60] = drci(@@asmi("lahf \n test bh,0x10 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 4,b
+    [0x61] = drci(@@asmi("lahf \n test bl,0x10 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 4,c
+    [0x62] = drci(@@asmi("lahf \n test ch,0x10 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 4,d
+    [0x63] = drci(@@asmi("lahf \n test cl,0x10 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 4,e
+    [0x64] = drci(@@asmi("lahf \n test dh,0x10 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 4,h
+    [0x65] = drci(@@asmi("lahf \n test dl,0x10 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 4,l
+    [0x66] = drci(@@asmi("lahf \n test byte [edx],0x10 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 4,(hl)
+    [0x67] = drci(@@asmi("lahf \n test al,0x10 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 4,a
+    [0x68] = drci(@@asmi("lahf \n test bh,0x20 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 5,b
+    [0x69] = drci(@@asmi("lahf \n test bl,0x20 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 5,c
+    [0x6a] = drci(@@asmi("lahf \n test ch,0x20 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 5,d
+    [0x6b] = drci(@@asmi("lahf \n test cl,0x20 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 5,e
+    [0x6c] = drci(@@asmi("lahf \n test dh,0x20 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 5,h
+    [0x6d] = drci(@@asmi("lahf \n test dl,0x20 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 5,l
+    [0x6e] = drci(@@asmi("lahf \n test byte [edx],0x20 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 5,(hl)
+    [0x6f] = drci(@@asmi("lahf \n test al,0x20 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 5,a
+    [0x70] = drci(@@asmi("lahf \n test bh,0x40 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 6,b
+    [0x71] = drci(@@asmi("lahf \n test bl,0x40 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 6,c
+    [0x72] = drci(@@asmi("lahf \n test ch,0x40 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 6,d
+    [0x73] = drci(@@asmi("lahf \n test cl,0x40 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 6,e
+    [0x74] = drci(@@asmi("lahf \n test dh,0x40 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 6,h
+    [0x75] = drci(@@asmi("lahf \n test dl,0x40 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 6,l
+    [0x76] = drci(@@asmi("lahf \n test byte [edx],0x40 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 6,(hl)
+    [0x77] = drci(@@asmi("lahf \n test al,0x40 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 6,a
+    [0x78] = drci(@@asmi("lahf \n test bh,0x80 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 7,b
+    [0x79] = drci(@@asmi("lahf \n test bl,0x80 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 7,c
+    [0x7a] = drci(@@asmi("lahf \n test ch,0x80 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 7,d
+    [0x7b] = drci(@@asmi("lahf \n test cl,0x80 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 7,e
+    [0x7c] = drci(@@asmi("lahf \n test dh,0x80 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 7,h
+    [0x7d] = drci(@@asmi("lahf \n test dl,0x80 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 7,l
+    [0x7e] = drci(@@asmi("lahf \n test byte [edx],0x80 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 7,(hl)
+    [0x7f] = drci(@@asmi("lahf \n test al,0x80 \n push eax \n mov al,ah \n lahf \n and al,0x01 ; keep old CF \n and ah,0xfe ; overriding the new CF \n or al,0x10 ; set AF \n or ah,al \n sahf \n pop eax")), // bit 7,a
+#endif
+
+    [0x80] = drci(@@asmi("lahf \n and bh,0xfe \n sahf")), // res 0,b
+    [0x81] = drci(@@asmi("lahf \n and bl,0xfe \n sahf")), // res 0,c
+    [0x82] = drci(@@asmi("lahf \n and ch,0xfe \n sahf")), // res 0,d
+    [0x83] = drci(@@asmi("lahf \n and cl,0xfe \n sahf")), // res 0,e
+    [0x84] = drci(@@asmi("lahf \n and dh,0xfe \n sahf")), // res 0,h
+    [0x85] = drci(@@asmi("lahf \n and dl,0xfe \n sahf")), // res 0,l
+    [0x86] = drci(@@asmi("lahf \n and byte [edx],0xfe \n sahf")), // res 0,(hl)
+    [0x87] = drci(@@asmi("lahf \n and al,0xfe \n sahf")), // res 0,a
+    [0x88] = drci(@@asmi("lahf \n and bh,0xfd \n sahf")), // res 1,b
+    [0x89] = drci(@@asmi("lahf \n and bl,0xfd \n sahf")), // res 1,c
+    [0x8a] = drci(@@asmi("lahf \n and ch,0xfd \n sahf")), // res 1,d
+    [0x8b] = drci(@@asmi("lahf \n and cl,0xfd \n sahf")), // res 1,e
+    [0x8c] = drci(@@asmi("lahf \n and dh,0xfd \n sahf")), // res 1,h
+    [0x8d] = drci(@@asmi("lahf \n and dl,0xfd \n sahf")), // res 1,l
+    [0x8e] = drci(@@asmi("lahf \n and byte [edx],0xfd \n sahf")), // res 1,(hl)
+    [0x8f] = drci(@@asmi("lahf \n and al,0xfd \n sahf")), // res 1,a
+    [0x90] = drci(@@asmi("lahf \n and bh,0xfb \n sahf")), // res 2,b
+    [0x91] = drci(@@asmi("lahf \n and bl,0xfb \n sahf")), // res 2,c
+    [0x92] = drci(@@asmi("lahf \n and ch,0xfb \n sahf")), // res 2,d
+    [0x93] = drci(@@asmi("lahf \n and cl,0xfb \n sahf")), // res 2,e
+    [0x94] = drci(@@asmi("lahf \n and dh,0xfb \n sahf")), // res 2,h
+    [0x95] = drci(@@asmi("lahf \n and dl,0xfb \n sahf")), // res 2,l
+    [0x96] = drci(@@asmi("lahf \n and byte [edx],0xfb \n sahf")), // res 2,(hl)
+    [0x97] = drci(@@asmi("lahf \n and al,0xfb \n sahf")), // res 2,a
+    [0x98] = drci(@@asmi("lahf \n and bh,0xf7 \n sahf")), // res 3,b
+    [0x99] = drci(@@asmi("lahf \n and bl,0xf7 \n sahf")), // res 3,c
+    [0x9a] = drci(@@asmi("lahf \n and ch,0xf7 \n sahf")), // res 3,d
+    [0x9b] = drci(@@asmi("lahf \n and cl,0xf7 \n sahf")), // res 3,e
+    [0x9c] = drci(@@asmi("lahf \n and dh,0xf7 \n sahf")), // res 3,h
+    [0x9d] = drci(@@asmi("lahf \n and dl,0xf7 \n sahf")), // res 3,l
+    [0x9e] = drci(@@asmi("lahf \n and byte [edx],0xf7 \n sahf")), // res 3,(hl)
+    [0x9f] = drci(@@asmi("lahf \n and al,0xf7 \n sahf")), // res 3,a
+    [0xa0] = drci(@@asmi("lahf \n and bh,0xef \n sahf")), // res 4,b
+    [0xa1] = drci(@@asmi("lahf \n and bl,0xef \n sahf")), // res 4,c
+    [0xa2] = drci(@@asmi("lahf \n and ch,0xef \n sahf")), // res 4,d
+    [0xa3] = drci(@@asmi("lahf \n and cl,0xef \n sahf")), // res 4,e
+    [0xa4] = drci(@@asmi("lahf \n and dh,0xef \n sahf")), // res 4,h
+    [0xa5] = drci(@@asmi("lahf \n and dl,0xef \n sahf")), // res 4,l
+    [0xa6] = drci(@@asmi("lahf \n and byte [edx],0xef \n sahf")), // res 4,(hl)
+    [0xa7] = drci(@@asmi("lahf \n and al,0xef \n sahf")), // res 4,a
+    [0xa8] = drci(@@asmi("lahf \n and bh,0xdf \n sahf")), // res 5,b
+    [0xa9] = drci(@@asmi("lahf \n and bl,0xdf \n sahf")), // res 5,c
+    [0xaa] = drci(@@asmi("lahf \n and ch,0xdf \n sahf")), // res 5,d
+    [0xab] = drci(@@asmi("lahf \n and cl,0xdf \n sahf")), // res 5,e
+    [0xac] = drci(@@asmi("lahf \n and dh,0xdf \n sahf")), // res 5,h
+    [0xad] = drci(@@asmi("lahf \n and dl,0xdf \n sahf")), // res 5,l
+    [0xae] = drci(@@asmi("lahf \n and byte [edx],0xdf \n sahf")), // res 5,(hl)
+    [0xaf] = drci(@@asmi("lahf \n and al,0xdf \n sahf")), // res 5,a
+    [0xb0] = drci(@@asmi("lahf \n and bh,0xbf \n sahf")), // res 6,b
+    [0xb1] = drci(@@asmi("lahf \n and bl,0xbf \n sahf")), // res 6,c
+    [0xb2] = drci(@@asmi("lahf \n and ch,0xbf \n sahf")), // res 6,d
+    [0xb3] = drci(@@asmi("lahf \n and cl,0xbf \n sahf")), // res 6,e
+    [0xb4] = drci(@@asmi("lahf \n and dh,0xbf \n sahf")), // res 6,h
+    [0xb5] = drci(@@asmi("lahf \n and dl,0xbf \n sahf")), // res 6,l
+    [0xb6] = drci(@@asmi("lahf \n and byte [edx],0xbf \n sahf")), // res 6,(hl)
+    [0xb7] = drci(@@asmi("lahf \n and al,0xbf \n sahf")), // res 6,a
+    [0xb8] = drci(@@asmi("lahf \n and bh,0x7f \n sahf")), // res 7,b
+    [0xb9] = drci(@@asmi("lahf \n and bl,0x7f \n sahf")), // res 7,c
+    [0xba] = drci(@@asmi("lahf \n and ch,0x7f \n sahf")), // res 7,d
+    [0xbb] = drci(@@asmi("lahf \n and cl,0x7f \n sahf")), // res 7,e
+    [0xbc] = drci(@@asmi("lahf \n and dh,0x7f \n sahf")), // res 7,h
+    [0xbd] = drci(@@asmi("lahf \n and dl,0x7f \n sahf")), // res 7,l
+    [0xbe] = drci(@@asmi("lahf \n and byte [edx],0x7f \n sahf")), // res 7,(hl)
+    [0xbf] = drci(@@asmi("lahf \n and al,0x7f \n sahf")), // res 7,a
+
+    [0xc0] = drci(@@asmi("lahf \n or bh,0x01 \n sahf")), // set 0,b
+    [0xc1] = drci(@@asmi("lahf \n or bl,0x01 \n sahf")), // set 0,c
+    [0xc2] = drci(@@asmi("lahf \n or ch,0x01 \n sahf")), // set 0,d
+    [0xc3] = drci(@@asmi("lahf \n or cl,0x01 \n sahf")), // set 0,e
+    [0xc4] = drci(@@asmi("lahf \n or dh,0x01 \n sahf")), // set 0,h
+    [0xc5] = drci(@@asmi("lahf \n or dl,0x01 \n sahf")), // set 0,l
+    [0xc6] = drci(@@asmi("lahf \n or byte [edx],0x01 \n sahf")), // set 0,(hl)
+    [0xc7] = drci(@@asmi("lahf \n or al,0x01 \n sahf")), // set 0,a
+    [0xc8] = drci(@@asmi("lahf \n or bh,0x02 \n sahf")), // set 1,b
+    [0xc9] = drci(@@asmi("lahf \n or bl,0x02 \n sahf")), // set 1,c
+    [0xca] = drci(@@asmi("lahf \n or ch,0x02 \n sahf")), // set 1,d
+    [0xcb] = drci(@@asmi("lahf \n or cl,0x02 \n sahf")), // set 1,e
+    [0xcc] = drci(@@asmi("lahf \n or dh,0x02 \n sahf")), // set 1,h
+    [0xcd] = drci(@@asmi("lahf \n or dl,0x02 \n sahf")), // set 1,l
+    [0xce] = drci(@@asmi("lahf \n or byte [edx],0x02 \n sahf")), // set 1,(hl)
+    [0xcf] = drci(@@asmi("lahf \n or al,0x02 \n sahf")), // set 1,a
+    [0xd0] = drci(@@asmi("lahf \n or bh,0x04 \n sahf")), // set 2,b
+    [0xd1] = drci(@@asmi("lahf \n or bl,0x04 \n sahf")), // set 2,c
+    [0xd2] = drci(@@asmi("lahf \n or ch,0x04 \n sahf")), // set 2,d
+    [0xd3] = drci(@@asmi("lahf \n or cl,0x04 \n sahf")), // set 2,e
+    [0xd4] = drci(@@asmi("lahf \n or dh,0x04 \n sahf")), // set 2,h
+    [0xd5] = drci(@@asmi("lahf \n or dl,0x04 \n sahf")), // set 2,l
+    [0xd6] = drci(@@asmi("lahf \n or byte [edx],0x04 \n sahf")), // set 2,(hl)
+    [0xd7] = drci(@@asmi("lahf \n or al,0x04 \n sahf")), // set 2,a
+    [0xd8] = drci(@@asmi("lahf \n or bh,0x08 \n sahf")), // set 3,b
+    [0xd9] = drci(@@asmi("lahf \n or bl,0x08 \n sahf")), // set 3,c
+    [0xda] = drci(@@asmi("lahf \n or ch,0x08 \n sahf")), // set 3,d
+    [0xdb] = drci(@@asmi("lahf \n or cl,0x08 \n sahf")), // set 3,e
+    [0xdc] = drci(@@asmi("lahf \n or dh,0x08 \n sahf")), // set 3,h
+    [0xdd] = drci(@@asmi("lahf \n or dl,0x08 \n sahf")), // set 3,l
+    [0xde] = drci(@@asmi("lahf \n or byte [edx],0x08 \n sahf")), // set 3,(hl)
+    [0xdf] = drci(@@asmi("lahf \n or al,0x08 \n sahf")), // set 3,a
+    [0xe0] = drci(@@asmi("lahf \n or bh,0x10 \n sahf")), // set 4,b
+    [0xe1] = drci(@@asmi("lahf \n or bl,0x10 \n sahf")), // set 4,c
+    [0xe2] = drci(@@asmi("lahf \n or ch,0x10 \n sahf")), // set 4,d
+    [0xe3] = drci(@@asmi("lahf \n or cl,0x10 \n sahf")), // set 4,e
+    [0xe4] = drci(@@asmi("lahf \n or dh,0x10 \n sahf")), // set 4,h
+    [0xe5] = drci(@@asmi("lahf \n or dl,0x10 \n sahf")), // set 4,l
+    [0xe6] = drci(@@asmi("lahf \n or byte [edx],0x10 \n sahf")), // set 4,(hl)
+    [0xe7] = drci(@@asmi("lahf \n or al,0x10 \n sahf")), // set 4,a
+    [0xe8] = drci(@@asmi("lahf \n or bh,0x20 \n sahf")), // set 5,b
+    [0xe9] = drci(@@asmi("lahf \n or bl,0x20 \n sahf")), // set 5,c
+    [0xea] = drci(@@asmi("lahf \n or ch,0x20 \n sahf")), // set 5,d
+    [0xeb] = drci(@@asmi("lahf \n or cl,0x20 \n sahf")), // set 5,e
+    [0xec] = drci(@@asmi("lahf \n or dh,0x20 \n sahf")), // set 5,h
+    [0xed] = drci(@@asmi("lahf \n or dl,0x20 \n sahf")), // set 5,l
+    [0xee] = drci(@@asmi("lahf \n or byte [edx],0x20 \n sahf")), // set 5,(hl)
+    [0xef] = drci(@@asmi("lahf \n or al,0x20 \n sahf")), // set 5,a
+    [0xf0] = drci(@@asmi("lahf \n or bh,0x40 \n sahf")), // set 6,b
+    [0xf1] = drci(@@asmi("lahf \n or bl,0x40 \n sahf")), // set 6,c
+    [0xf2] = drci(@@asmi("lahf \n or ch,0x40 \n sahf")), // set 6,d
+    [0xf3] = drci(@@asmi("lahf \n or cl,0x40 \n sahf")), // set 6,e
+    [0xf4] = drci(@@asmi("lahf \n or dh,0x40 \n sahf")), // set 6,h
+    [0xf5] = drci(@@asmi("lahf \n or dl,0x40 \n sahf")), // set 6,l
+    [0xf6] = drci(@@asmi("lahf \n or byte [edx],0x40 \n sahf")), // set 6,(hl)
+    [0xf7] = drci(@@asmi("lahf \n or al,0x40 \n sahf")), // set 6,a
+    [0xf8] = drci(@@asmi("lahf \n or bh,0x80 \n sahf")), // set 7,b
+    [0xf9] = drci(@@asmi("lahf \n or bl,0x80 \n sahf")), // set 7,c
+    [0xfa] = drci(@@asmi("lahf \n or ch,0x80 \n sahf")), // set 7,d
+    [0xfb] = drci(@@asmi("lahf \n or cl,0x80 \n sahf")), // set 7,e
+    [0xfc] = drci(@@asmi("lahf \n or dh,0x80 \n sahf")), // set 7,h
+    [0xfd] = drci(@@asmi("lahf \n or dl,0x80 \n sahf")), // set 7,l
+    [0xfe] = drci(@@asmi("lahf \n or byte [edx],0x80 \n sahf")), // set 7,(hl)
+    [0xff] = drci(@@asmi("lahf \n or al,0x80 \n sahf")), // set 7,a
+};

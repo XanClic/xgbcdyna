@@ -75,6 +75,32 @@ static inline void vmappn(uint8_t *b, size_t *c, uint8_t *va, size_t size)
 
 #define evmappn(...) vmappn(drc, &ei, __VA_ARGS__, sizeof(__VA_ARGS__))
 
+static void insert_const_insn(const struct DynarecConstInsn dci, int drip_offset)
+{
+    if (unlikely(dci.length == 0)) {
+        printf("%04X: Unbekannter Opcode %02X\n", drip - drip_offset, drc[drip - drip_offset]);
+        FILE *d = fopen("/tmp/xgbcdyna-coredump", "w");
+        fwrite(drc, 1, CODE_BUFSZ, d);
+        fclose(d);
+        exit(1);
+    }
+
+    memcpy(drc + dri, dci.data, dci.length);
+    if (unlikely(dci.load_length)) {
+        if (dci.load_length == sizeof(uint8_t)) {
+            drc[dri + dci.load_offset] = MEM8(drip++);
+        } else if (likely(dci.load_length == sizeof(uint16_t))) {
+            *(uint16_t *)&drc[dri + dci.load_offset] = MEM16(drip);
+            drip += 2;
+        } else {
+            for (int i = 0; i < dci.load_length; i++) {
+                drc[dri + dci.load_offset + i] = MEM8(drip++);
+            }
+        }
+    }
+    dri += dci.length;
+}
+
 static void dynarec(exec_unit_t eu, uint16_t ip)
 {
 #ifdef DUMP_BLOCKS
@@ -207,98 +233,13 @@ static void dynarec(exec_unit_t eu, uint16_t ip)
             if (dynarec_table[op] != NULL) {
                 dynarec_table[op]();
             } else {
-                const struct DynarecConstInsn dci = dynarec_const_insns[op];
-
-                if (unlikely(dci.length == 0)) {
-                    printf("%04X: Unbekannter Opcode %02X\n", drip - 1, op);
-                    FILE *d = fopen("/tmp/xgbcdyna-coredump", "w");
-                    fwrite(drc, 1, CODE_BUFSZ, d);
-                    fclose(d);
-                    exit(1);
-                }
-
-                memcpy(drc + dri, dci.data, dci.length);
-                if (unlikely(dci.load_length)) {
-                    if (dci.load_length == sizeof(uint8_t)) {
-                        drc[dri + dci.load_offset] = MEM8(drip++);
-                    } else if (likely(dci.load_length == sizeof(uint16_t))) {
-                        *(uint16_t *)&drc[dri + dci.load_offset] = MEM16(drip);
-                        drip += 2;
-                    } else {
-                        for (int i = 0; i < dci.load_length; i++) {
-                            drc[dri + dci.load_offset + i] = MEM8(drip++);
-                        }
-                    }
-                }
-                dri += dci.length;
+                insert_const_insn(dynarec_const_insns[op], 1);
             }
         } else {
             pop = MEM8(drip++);
             dr_cycle_counter += cycles0xCB[pop];
 
-            unsigned bval = 1 << ((pop & 0x38) >> 3);
-            unsigned reg = pop & 0x07;
-
-            switch ((pop & 0xC0) >> 6) {
-                case 0x01: // BIT
-                    drvmappn(@@asm("lahf"));
-                    // test r,n
-                    if (reg == 7) {
-                        // A aka al
-                        drvmapp1(0xA8);
-                    } else {
-                        drvmapp1(0xF6);
-                        drvmapp1(dynarec_table_CBbit[reg]);
-                    }
-                    drvmapp1(bval);
-#ifndef UNSAVE_FLAG_OPTIMIZATIONS
-                    drvmappn(@@asm("push eax \n mov al,ah \n lahf"));
-                    // CF in al behalten und in ah löschen
-                    drvmappn(@@asm("and al,0x1 \n and ah,0xfe"));
-                    // AF in al setzen
-                    drvmappn(@@asm("or al,0x10 \n or ah,al"));
-                    drvmappn(@@asm("or ah,al \n sahf \n pop eax"));
-#endif
-                    break;
-                case 0x02: // RES
-                    drvmappn(@@asm("lahf"));
-                    // and r,n
-                    if (reg == 7) { // A aka al
-                        drvmapp1(0x24);
-                    } else {
-                        drvmapp1(0x80);
-                        drvmapp1(dynarec_table_CBbit[reg] | 0x20);
-                    }
-                    drvmapp1(~bval);
-                    drvmappn(@@asm("sahf"));
-                    break;
-                case 0x03: // SET
-                    drvmappn(@@asm("lahf"));
-                    // or r,n
-                    if (reg == 7) { // A aka al
-                        drvmapp1(0x0C);
-                    } else {
-                        drvmapp1(0x80);
-                        drvmapp1(dynarec_table_CBbit[reg] | 0x08);
-                    }
-                    drvmapp1(bval);
-                    drvmappn(@@asm("sahf"));
-                    break;
-                default:
-#ifdef UNSAVE_FLAG_OPTIMIZATIONS
-                    if (unlikely(dynarec_table_CB[pop] != NULL)) {
-                        dynarec_table_CB[pop]();
-                    } else if (likely(dynarec_const_CB[pop])) {
-                        drvmapp2(dynarec_const_CB[pop]);
-#else
-                    if (likely(dynarec_table_CB[pop] != NULL)) {
-                        dynarec_table_CB[pop]();
-#endif
-                    } else {
-                        printf("%04X: Unbekannter Opcode CB %02X\n", drip - 2, pop);
-                        exit(1);
-                    }
-            }
+            insert_const_insn(dynarec_const_cb_insns[pop], 2);
         }
 
         if (unlikely(dr_cycle_counter >= MAX_CYCLES)) {

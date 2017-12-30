@@ -303,7 +303,7 @@ drop(ld_a__ffn)
 drop(ld_a__ffc)
 {
     JUMP_DISTANCE_START();
-    uintptr_t target = &drc[dri + 7];
+    uintptr_t target = (uintptr_t)&drc[dri + 7];
     drvmappn((uint8_t[]){
                  @@asmr("mov [0x12345678],bl", [0x78, 0x56, 0x34, 0x12], "target"),
                  @@asmr("mov al,[0x12345678]", [0x78, 0x56, 0x34, 0x12], "MEM_BASE + 0xFF00")

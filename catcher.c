@@ -115,13 +115,15 @@ static size_t x86_execute(ucontext_t *ac)
                 case 0x02: // add al,[edx]
                     v1 = ac->uc_mcontext.gregs[REG_EAX] & 0xFF;
                     v2 = unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xFFFF);
+                    result16 = (uint16_t)v1 + v2;
+                    result = (uint8_t)result16;
                     ac->uc_mcontext.gregs[REG_EAX] &= ~0xFF;
-                    ac->uc_mcontext.gregs[REG_EAX] |= v1 + v2;
+                    ac->uc_mcontext.gregs[REG_EAX] |= result;
                     ac->uc_mcontext.gregs[REG_EFL] &= ~0x08D5; // OF, SF, ZF, AF, PF und CF löschen
                     // ZF, CF, AF setzen, den Rest brauche ich nicht
-                    ac->uc_mcontext.gregs[REG_EFL] |= (!(v1 + v2) << 6) // ZF
-                                                   |  (v1 + v2 > 0xff)  // CF
-                                                   |  ((v1 & 0xf) + (v2 & 0xf) > 0xf); // AF
+                    ac->uc_mcontext.gregs[REG_EFL] |= (!(result) << 6) // ZF
+                                                   |  (result16 >> 8) // CF
+                                                   |  (((v1 & 0xf) + (v2 & 0xf)) & 0x10); // AF
                     return 2;
             }
             break;

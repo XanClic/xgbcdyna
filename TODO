@@ -1,0 +1,9 @@
+Falls mir langweilig wird:
+
+- Irgendwie ist irgendwas noch kaputt.
+  = Vielleicht würde es helfen, wenn sowohl xgbcdyna als auch xgbcemu den
+    CPU-Zustand aufzeichnen könnten, sodass man dann vergleichen kann.
+- HALT_CYCLES standardmäßig auf -1 setzen wäre nett, aber dann müsste man nicht
+  einfach auf den nächsten HBlank warten, sondern auf jeden Interrupt.
+- catcher.c sollte auch irgendwie die Präcompilerinfrastruktur benutzen.
+  (Mit irgendwie automatisch generierten verschachtelten switches?)

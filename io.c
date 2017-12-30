@@ -443,6 +443,6 @@ void io_write(uint8_t reg, uint8_t val)
             break;
         default:
             fprintf(stderr, "[io] Unbekanntes I/O-Register 0x%02X (möchte 0x%02X schreiben).\n", (int)reg, (int)val);
-            exit(1);
+            /*exit(1);*/
     }
 }

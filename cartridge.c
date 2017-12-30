@@ -39,7 +39,7 @@ bool check_cartridge(FILE *romfp)
     switch (fgetc(romfp))
     {
         CART_TYPE(0x00, 0, false, false, false, false);
-        CART_TYPE(0x01, 1, false, false, false, false);
+        CART_TYPE(0x01, 1, false,  true, false, false);
         CART_TYPE(0x02, 1,  true, false, false, false);
         CART_TYPE(0x03, 1,  true,  true, false, false);
         CART_TYPE(0x05, 2, false, false, false, false);

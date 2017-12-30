@@ -304,6 +304,21 @@ static void mbc1_rom_write(unsigned off, uint8_t val)
     }
 }
 
+
+static void mbc1_ram_write(unsigned off, uint8_t val)
+{
+    (void)off;
+    (void)val;
+}
+
+
+static uint8_t mbc1_ram_read(unsigned off)
+{
+    (void)off;
+    return 0;
+}
+
+
 static void mbc3_ram_write(unsigned off, uint8_t val)
 {
     if (unlikely(cramb < 8) || unlikely(cramb > 12))
@@ -401,10 +416,12 @@ static void (*const rom_write[6])(unsigned off, uint8_t val) = {
 };
 
 static uint8_t (*const ram_read[6])(unsigned off) = {
+    [1] = &mbc1_ram_read,
     [3] = &mbc3_ram_read
 };
 
 static void (*const ram_write[6])(unsigned off, uint8_t val) = {
+    [1] = &mbc1_ram_write,
     [3] = &mbc3_ram_write
 };
 

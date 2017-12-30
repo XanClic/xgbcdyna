@@ -277,6 +277,10 @@ static size_t x86_execute(ucontext_t *ac)
                     ac->uc_mcontext.gregs[REG_EAX] &= ~0xFF;
                     ac->uc_mcontext.gregs[REG_EAX] |= unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EBX] & 0xFFFF);
                     return 2;
+                case 0x0a: // mov cl,[edx]
+                    ac->uc_mcontext.gregs[REG_ECX] &= ~0xff;
+                    ac->uc_mcontext.gregs[REG_ECX] |= unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xffff);
+                    return 2;
                 case 0x11: // mov dl,[ecx]
                     ac->uc_mcontext.gregs[REG_EDX] &= ~0xFF;
                     ac->uc_mcontext.gregs[REG_EDX] |= unsafe_mem_read8(ac->uc_mcontext.gregs[REG_ECX] & 0xFFFF);
@@ -288,6 +292,14 @@ static size_t x86_execute(ucontext_t *ac)
                 case 0x13: // mov dl,[ebx]
                     ac->uc_mcontext.gregs[REG_EDX] &= ~0xFF;
                     ac->uc_mcontext.gregs[REG_EDX] |= unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EBX] & 0xFFFF);
+                    return 2;
+                case 0x2a: // mov ch,[edx]
+                    ac->uc_mcontext.gregs[REG_ECX] &= ~0xff00;
+                    ac->uc_mcontext.gregs[REG_ECX] |= (uint32_t)unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xffff) << 8;
+                    return 2;
+                case 0x3a: // mov bh,[edx]
+                    ac->uc_mcontext.gregs[REG_EBX] &= ~0xff00;
+                    ac->uc_mcontext.gregs[REG_EBX] |= (uint32_t)unsafe_mem_read8(ac->uc_mcontext.gregs[REG_EDX] & 0xffff) << 8;
                     return 2;
             }
             break;

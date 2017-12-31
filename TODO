@@ -7,3 +7,5 @@ Falls mir langweilig wird:
   einfach auf den nächsten HBlank warten, sondern auf jeden Interrupt.
 - catcher.c sollte auch irgendwie die Präcompilerinfrastruktur benutzen.
   (Mit irgendwie automatisch generierten verschachtelten switches?)
+
+- Kann man die Grafik irgendwie mit SSE geil schneller machen?

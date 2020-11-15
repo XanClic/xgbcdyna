@@ -105,15 +105,50 @@ def array_replace(a, p, r)
     return nil
 end
 
+def run_cmd(*args)
+    p_r, p_w = IO.pipe()
+
+    child = fork
+    if !child
+        p_r.close()
+
+        $stdout.reopen(p_w)
+        $stderr.reopen(p_w)
+
+        Process.exec(*args)
+
+        # Should not get here (Process.exec() should throw an exception
+        # instead of going on)
+        $stderr.puts("Running FASM failed")
+        exit 1
+    end
+
+    p_w.close()
+
+    Process.wait(child)
+    success = $?.success?
+
+    if !success
+        $stderr.puts("Command '#{args[0]}' failed:")
+        $stderr.puts(p_r.read())
+    end
+    p_r.close()
+    return success
+end
+
 def do_process_asmr(get_offset, *args)
     input = args.shift
 
     pid = Process.pid
 
     IO.write("/tmp/.precompiler.#{pid}.asm", "use#{$bitness}\n" + input)
-    system("fasm /tmp/.precompiler.#{pid}.{asm,bin} &> /tmp/.precompiler.#{pid}.fasm-log") || die("FASM failed\n" + IO.read("/tmp/.precompiler.#{pid}.fasm-log"))
+    run_cmd('fasm', "/tmp/.precompiler.#{pid}.asm", "/tmp/.precompiler.#{pid}.bin") or exit 1
     array = IO.read("/tmp/.precompiler.#{pid}.bin").unpack('C*')
-    system("rm -f /tmp/.precompiler.#{pid}.{asm,bin,fasm-log}")
+    begin
+        File.unlink("/tmp/.precompiler.#{pid}.asm")
+        File.unlink("/tmp/.precompiler.#{pid}.bin")
+    rescue
+    end
 
     while !args.empty?
         pattern = args.shift
